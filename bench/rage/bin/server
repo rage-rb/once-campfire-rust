@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+APP=$(cd "$(dirname "$0")/.." && pwd)
+export BUNDLE_GEMFILE="$APP/Gemfile"
+export RAGE_ENV=${RAGE_ENV:-production}
+export RAILS_ENV=$RAGE_ENV
+cd "$APP"
+exec bundle exec rage s -b "${BIND:-0.0.0.0}" -p "${HTTP_PORT:-4555}"

@@ -1,0 +1,18 @@
+#!/usr/bin/env ruby
+# One-time benchmark fixture. Never drop or reload an existing database.
+ENV["RAILS_ENV"] ||= "production"
+ENV["RAGE_ENV"] ||= ENV["RAILS_ENV"]
+require_relative "../config/environment"
+require "fileutils"
+FileUtils.mkdir_p(File.dirname(ActiveRecord::Base.connection_db_config.database))
+unless ActiveRecord::Base.connection.table_exists?(:users)
+  load "#{CampfireBenchmark::REFERENCE}/db/schema.rb"
+end
+
+if User.none?
+  Account.create!(name: "Benchmark")
+  user = User.create!(name: "David", email_address: "david@example.com", password: "secret123456", role: :administrator)
+  Current.user = user
+  Rooms::Open.create_for({ name: "Everyone" }, users: [user])
+end
+puts "Prepared #{ActiveRecord::Base.connection_db_config.database} (#{User.count} users, #{Room.count} rooms)"

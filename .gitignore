@@ -5,3 +5,4 @@ target/
 /parity/.native
 /.claude
 /.cargo-home
+.agents

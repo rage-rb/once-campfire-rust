@@ -1,0 +1,2 @@
+eval_gemfile "../../reference/Gemfile"
+gem "rage-rb", github: "rage-rb/rage", branch: "main"

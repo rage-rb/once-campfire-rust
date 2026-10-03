@@ -1,0 +1,12 @@
+default: &default
+  adapter: sqlite3
+  database: <%= ENV.fetch("DATABASE_PATH", "#{CampfireBenchmark::STORAGE}/db/production.sqlite3") %>
+  pool: 10
+  timeout: 5000
+  default_transaction_mode: immediate
+production:
+  <<: *default
+development:
+  <<: *default
+test:
+  <<: *default
