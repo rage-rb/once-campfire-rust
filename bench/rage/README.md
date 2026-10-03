@@ -48,7 +48,7 @@ Deliberate benchmark differences:
   and other browser endpoints are outside the slice. The full message ERB still includes their
   original markup and URLs. The fixture command replaces the first-run flow.
 - Forgery protection and login rate limiting are disabled for this controlled benchmark. The
-  existing runner posts an empty token; scrape exposes a placeholder. The Action View host also
+  scrape exposes a placeholder token, which the updated runner forwards. The Action View host also
   disables forgery protection, so inactive reaction forms omit CSRF hidden inputs. Include the
   actual frame size in comparisons. Tests compare complete HTML and JSON frames with the
   untouched reference ERB: with matching host/data and CSRF off they are byte-identical.
@@ -65,11 +65,9 @@ Deliberate benchmark differences:
 - Runtime production log level defaults to warn. Development reloading is outside this slice;
   use production or test mode when validating against the pinned Rails development version.
 
-Initial manual sanity on macOS ARM64 / Ruby 4.0.6: production boot, Rails-cookie login, three-source
-scrape, full 9,199-byte Turbo response, and one real loadgen client with all six confirmations,
-zero failures, one complete paced marker and 86/86 complete saturated messages over one second.
-These are functional checks, not performance measurements; later stages add tests and the shared
-100-client runner before real Raspberry Pi measurements.
+The shared 100-client live checks and their raw results are recorded in
+[`../results/rage-100-smoke-20261003/report.md`](../results/rage-100-smoke-20261003/report.md).
+These validate preparation, native scheduling and delivery; they are not Pi measurements.
 
 Run the focused acceptance suite with the bundled reference test dependencies:
 
@@ -85,3 +83,97 @@ HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and bo
 queries, plus fiber-local `Current` cleanup. Tests use the same synchronous fiber shim as
 `rage/rspec` and substitute socket transport/timers; live Iodine scheduling, pings and networking
 are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
+
+## Shared runner and local smoke
+
+Build the load generator once; its Tokio runtime uses all available logical cores by default.
+The runner no longer supplies a fixed affinity or a CPU quota. `APP_CPUS` and `LOADGEN_CPUS`
+are optional Linux `taskset` selections; leave both unset for a real Pi/external load host.
+
+```sh
+CARGO_TARGET_DIR=target/bench cargo build --release --manifest-path bench/loadgen/Cargo.toml
+WORK="$PWD/bench/.work/rust-smoke" PORT=4555 \
+  bench/results/pi-100k-20260928/run100k.sh target/release/campfire rust 100
+WORK="$PWD/bench/.work/rage-smoke" PORT=4555 \
+  bench/results/pi-100k-20260928/run100k.sh bench/rage/bin/server rage 100
+```
+
+Local Rage preparation automatically runs `bin/prepare`. Both implementations then use the same
+`fill.py` body generator to POST 80 messages through HTTP, log in and scrape exactly three distinct
+stream sources. `fill.py --prepared` skips only the first-run form, which Rage replaces with the
+fixture command. Save a separate WORK for each implementation and secret/base combination.
+Subsequent runs with the same WORK reuse the cookie and scrape, preserving the initial 80-message
+fill but accumulating benchmark messages. Use fresh WORKs for measured comparisons.
+
+The default measured phases remain 30 seconds idle, 10 paced markers at 200 ms intervals and two
+closed-loop posters for 10 seconds, then delivery drain. `--wire 1` counts actual WebSocket bytes
+and frames with compression disabled for a comparable raw transport. Add `--deflate 1` to offer
+browser compression; JSON reports both the offer and number of sockets that negotiated it.
+Rust accepts it; stock Rage/Iodine declines it. A comparison with that offer measures each native
+transport, including the compression difference. `frames_per_sec` now includes all socket frames
+(pings/unreads included); `deliveries_per_sec` retains the separate marked-delivery count.
+No measured wire count is represented as zero when `--wire 0 --deflate 0` disables observation.
+
+The runner exits unsuccessfully on a missing client, fewer than six subscriptions, any failed HTTP
+POST, or incomplete paced/saturated delivery. A login redirect is a failed POST. Every attempted
+saturated POST is reported so failed requests cannot disappear from throughput. WebSocket upgrades
+have a 30-second deadline and retain their own slot in the 50-handshake limit. The previous client
+shared connection counter could release another client's slot; that is corrected. The accidental
+second idle hold after saturation is removed. These corrections and the real-network topology
+mean this is a reproduction of the workload, not an identical replay of the older emulated-host
+orchestration in the September report.
+
+Local runs sample only PIDs launched by the runner, clean up those processes on exit, and refuse to
+launch over an already listening app. Linux records PSS and CPU from `/proc`; macOS records RSS and
+CPU from `ps` and labels that distinction. App CPU/memory exclude the loadgen. External mode samples
+only the loadgen on its own host; sample the one-process app separately on the Pi.
+
+## Real Raspberry Pi 5 and external load host
+
+On the Pi, install this checkout's pinned Ruby/bundle (or build Rust), keep the `reference/`
+submodule checked out, and arrange an open-file limit above the socket count on both machines
+(for example `ulimit -n 200000`, with a corresponding hard limit). No emulated CPU quota is used.
+The following launches Rage and samples its actual single worker/process:
+
+```sh
+# Pi, repository root. Choose a fresh WORK for each measured comparison.
+export WORK="$PWD/bench/.work/rage-pi"
+export CAMPFIRE_STORAGE_PATH="$WORK/storage"
+export SECRET_KEY_BASE=$(python3 -c 'print("a" * 128)') # benchmark key
+mkdir -p "$WORK"
+bench/rage/bin/prepare
+HTTP_PORT=4555 bench/rage/bin/server > "$WORK/log" 2>&1 &
+APP_PID=$!
+python3 bench/sample_process.py --app "$APP_PID" > "$WORK/app-samples.jsonl" &
+SAMPLE_PID=$!
+# After the load-host run, stop these exact PIDs and retain app-samples.jsonl/log:
+# kill "$SAMPLE_PID" "$APP_PID"; wait "$SAMPLE_PID" "$APP_PID"
+```
+
+For Rust, use a separate WORK and the same key/storage exports, then replace Rage preparation and
+launch with `DISABLE_SSL=1 HTTP_PORT=4555 TARGET_PORT=4556 target/release/campfire server`.
+Its empty database first-run flow is prepared remotely by `fill.py`; use `PREPARED=0` below.
+Run the servers one at a time on the same Pi port. A single Rage worker/thread is deliberate;
+if changing the worker topology, aggregate every worker's CPU/memory and disclose it.
+
+On the separate Linux load host:
+
+```sh
+# PI_BASE is the Pi Ethernet address; LAN_SOURCES are real IPv4 addresses assigned to this host.
+# Supply enough source/destination port pairs for 100k, considering ip_local_port_range/TIME_WAIT.
+export PI_BASE=http://192.168.1.50:4555
+export LAN_SOURCES=192.168.1.101,192.168.1.102,192.168.1.103,192.168.1.104
+WORK="$PWD/bench/.work/rage-pi-client" BASE="$PI_BASE" PREPARED=1 SOURCES="$LAN_SOURCES" \
+  bench/results/pi-100k-20260928/run100k.sh - rage-pi 100000 --deflate 0
+# Rust: fresh Pi storage and load-host WORK, PREPARED=0, label rust-pi, same workload.
+```
+
+The example source addresses must actually be assigned to the load host; loopback source addresses
+are rejected in external mode. Four sources suffice only when the configured ephemeral-port range
+provides at least 25,000 available ports each; additional sources or cooldown may be needed between
+runs. Connect through Ethernet to measure the real network limit. First validate 100, then 1,000
+and 10,000 clients before 100,000. Synchronize clocks if merging Pi samples with load-host PHASE
+Unix timestamps. The sampler reports one PID; the native Rage launch uses one process.
+
+Runner regression checks: `python3 -m unittest bench/test_cable_report.py` and
+`CARGO_TARGET_DIR=target/bench cargo test --manifest-path bench/loadgen/Cargo.toml`.

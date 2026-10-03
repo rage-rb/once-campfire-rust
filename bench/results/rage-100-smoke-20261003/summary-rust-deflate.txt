@@ -1,0 +1,4 @@
+rust-deflate ready 100 failed 0 connect_s 0.06 post->all p50/p99 1.491 3.941 saturated attempted/posted/complete 20350 20350 20350 post_failed 0 wire MB/s 462.6 compressed clients 100
+  idle: 29.4s app 0.00 cores, RSS 48 MB; loadgen 0.00 cores, RSS 8 MB
+  paced: 1.0s app 0.01 cores, RSS 54 MB; loadgen 0.01 cores, RSS 17 MB
+  saturated: 9.1s app 3.74 cores, RSS 124 MB; loadgen 4.74 cores, RSS 62 MB

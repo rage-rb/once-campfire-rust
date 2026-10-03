@@ -10,7 +10,8 @@ def post(p, data, token):
     d = urllib.parse.urlencode({**data, "authenticity_token": token}).encode()
     r = op.open(urllib.request.Request(base + p, d, {"Accept": "text/vnd.turbo-stream.html, text/html", "Sec-Fetch-Site": "same-origin"})); return r.geturl(), r.read().decode()
 op.open(base + "/session/new")
-url, html = get("/first_run")
+if "--prepared" not in sys.argv[2:]:
+    url, html = get("/first_run")
 url, html = get("/session/new")
 url, html = post("/session", {"email_address": "david@example.com", "password": "secret123456"}, csrf(html)) if "first_run" not in url else post("/first_run", {"user[name]": "David Hansson", "user[email_address]": "david@example.com", "user[password]": "secret123456"}, csrf(html))
 print("after first run:", url)

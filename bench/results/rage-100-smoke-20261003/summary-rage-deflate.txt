@@ -1,0 +1,2 @@
+
+rage-deflate ready 100 failed 0 connect_s 0.36 post->all p50/p99 217.983 217.983 saturated attempted/posted/complete 76 76 76 post_failed 0 wire MB/s 89.2 compressed clients 0

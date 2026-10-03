@@ -1,0 +1,3 @@
+{"time": 1791035524.0339022, "app": {"cpu_seconds": 1.84, "memory_kb": 213536, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 0.01, "memory_kb": 5312, "memory_kind": "RSS"}}
+{"time": 1791035525.045244, "app": {"cpu_seconds": 2.02, "memory_kb": 219328, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 0.02, "memory_kb": 7648, "memory_kind": "RSS"}}
+{"time": 1791035526.0584059, "app": {"cpu_seconds": 2.78, "memory_kb": 242880, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 0.09, "memory_kb": 12768, "memory_kind": "RSS"}}

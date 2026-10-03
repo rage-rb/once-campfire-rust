@@ -1,0 +1,64 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "logical_cpus": 12,
+  "rust": "1.94.0",
+  "ruby": "4.0.6",
+  "rage": "1.28.0",
+  "rage_iodine": "5.6.0",
+  "reference": "90b330024dec3e757c79b6a7e6568f93da8e3148",
+  "rage_worker_processes": 1,
+  "rage_threads": 1,
+  "sampled_memory_kind": "RSS",
+  "initial_http_fill_messages": 80,
+  "final_deferred_pending": 0,
+  "runs": {
+    "rust-raw": {
+      "starting_messages": 80,
+      "successful_http_posts": 21268,
+      "ending_messages": 21348
+    },
+    "rust-deflate": {
+      "starting_messages": 21348,
+      "successful_http_posts": 20360,
+      "ending_messages": 41708
+    },
+    "rage-raw": {
+      "starting_messages": 80,
+      "successful_http_posts": 2472,
+      "ending_messages": 2552
+    },
+    "rage-deflate": {
+      "starting_messages": 2552,
+      "successful_http_posts": 77,
+      "ending_messages": 2629
+    }
+  },
+  "rust_final_database_counts": {
+    "messages": 41708,
+    "action_text_rich_texts": 41708,
+    "message_search_index": 41708,
+    "users": 1,
+    "rooms": 1,
+    "memberships": 1,
+    "push_subscriptions": 0
+  },
+  "rust_initial_fixture": {
+    "account": "Campfire",
+    "user": "David Hansson",
+    "room": "All Talk"
+  },
+  "rage_final_database_counts": {
+    "messages": 2629,
+    "action_text_rich_texts": 2629,
+    "message_search_index": 2629,
+    "users": 1,
+    "rooms": 1,
+    "memberships": 1,
+    "push_subscriptions": 0
+  },
+  "rage_initial_fixture": {
+    "account": "Campfire",
+    "user": "David Hansson",
+    "room": "All Talk"
+  }
+}

@@ -1,0 +1,5 @@
+
+rage-raw ready 100 failed 0 connect_s 0.24 post->all p50/p99 10.903 24.863 saturated attempted/posted/complete 2462 2462 2462 post_failed 0 wire MB/s 291.0 compressed clients 0
+  idle: 28.4s app 0.00 cores, RSS 231 MB; loadgen 0.00 cores, RSS 7 MB
+  paced: 1.0s app 0.05 cores, RSS 234 MB; loadgen 0.02 cores, RSS 9 MB
+  saturated: 9.1s app 1.00 cores, RSS 289 MB; loadgen 0.57 cores, RSS 22 MB
