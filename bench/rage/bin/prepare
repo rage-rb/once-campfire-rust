@@ -10,9 +10,10 @@ unless ActiveRecord::Base.connection.table_exists?(:users)
 end
 
 if User.none?
-  Account.create!(name: "Benchmark")
-  user = User.create!(name: "David", email_address: "david@example.com", password: "secret123456", role: :administrator)
-  Current.user = user
-  Rooms::Open.create_for({ name: "Everyone" }, users: [user])
+  if Account.any? || Room.any? || Membership.any?
+    raise ArgumentError, "Invalid benchmark dataset: expected an empty first-run database; use a fresh isolated WORK"
+  end
+  FirstRun.create!(name: "David Hansson", email_address: "david@example.com", password: "secret123456")
 end
+BenchmarkDataset.validate!
 puts "Prepared #{ActiveRecord::Base.connection_db_config.database} (#{User.count} users, #{Room.count} rooms)"

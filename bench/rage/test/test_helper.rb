@@ -64,10 +64,10 @@ class BenchmarkTest < Minitest::Test
       db.execute("DELETE FROM message_search_index")
     end
     Rage::Deferred.__backend.pending_tasks.each { |id, _| Rage::Deferred.__backend.remove_task(id) }
-    Account.create!(name: "Benchmark")
-    @user = User.create!(name: "David", email_address: "david@example.com", password: "secret123456", role: :administrator)
+    Account.create!(name: FirstRun::ACCOUNT_NAME)
+    @user = User.create!(id: 1, name: "David Hansson", email_address: "david@example.com", password: "secret123456", role: :administrator)
     Current.user = @user
-    @room = Rooms::Open.create_for({ name: "Everyone" }, users: [@user])
+    @room = Rooms::Open.create_for({ id: 1, name: FirstRun::FIRST_ROOM_NAME }, users: [@user])
     Current.reset
     @http = Rack::MockRequest.new(Rage.application)
     @broadcasts = []

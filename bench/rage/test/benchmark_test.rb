@@ -182,7 +182,7 @@ class MessageWorkloadTest < BenchmarkTest
     assert_equal true, BenchmarkPushMessage.new.__perform(context)
     assert_equal 2, pushes.size
     assert pushes.all? { |_, subscriptions| subscriptions.empty? }
-    assert_equal "David: #{message.plain_text_body}", pushes.first.first[:body]
+    assert_equal "David Hansson: #{message.plain_text_body}", pushes.first.first[:body]
     assert_nil Current.user
   ensure
     Rails.configuration.x.web_push_pool = original_pool if original_pool
@@ -242,5 +242,38 @@ class MessageWorkloadTest < BenchmarkTest
     assert_raises(ActiveRecord::RecordNotFound) { BenchmarkPushMessage.new.perform(room_id: -1, message_id: -1) }
     assert_nil Current.user
     assert_nil Current.request
+  end
+end
+
+class DatasetValidationTest < BenchmarkTest
+  def test_accepts_the_fill_dataset_without_changing_presence_or_messages
+    membership = @room.memberships.first
+    membership.present
+    before = membership.reload.attributes
+    assert BenchmarkDataset.validate!
+    assert_equal before, membership.reload.attributes
+    assert_equal 0, Message.count
+  end
+
+  def test_rejects_payload_changing_names_and_wrong_room_id
+    @user.update!(name: "David")
+    assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "fill.py administrator"
+    @user.update!(name: "David Hansson")
+    @room.update!(name: "Everyone")
+    assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "All Talk room"
+    @room.update!(name: FirstRun::FIRST_ROOM_NAME)
+    @room.memberships.delete_all
+    @room.update_columns(id: 2)
+    assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "id 1"
+  end
+
+  def test_rejects_extra_users_and_push_subscriptions_before_jobs_can_retry
+    bot = User.create!(name: "Bot", role: :bot)
+    assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "one user"
+    Membership.where(user: bot).delete_all
+    bot.delete
+    # Bypass endpoint DNS validation: no network delivery is supported by this slice.
+    Push::Subscription.insert_all!([{ user_id: @user.id, endpoint: "https://fcm.googleapis.com/benchmark", created_at: Time.current, updated_at: Time.current }])
+    assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "no push subscriptions"
   end
 end

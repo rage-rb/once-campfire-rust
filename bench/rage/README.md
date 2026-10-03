@@ -22,8 +22,13 @@ HTTP_PORT=4555 bench/rage/bin/server
 `HTTP_PORT` to Rage's port. It runs one worker in production, with in-process Cable and Deferred.
 `DATABASE_PATH` can select an existing compatible SQLite database. Use an isolated benchmark copy:
 messages, sessions and membership presence are real writes. `bin/prepare` loads the exact reference
-schema only into an empty database, then creates the account, David and Everyone room. It does not
+schema only into an empty database, then calls the reference `FirstRun.create!` with the same
+Campfire account, David Hansson administrator and All Talk room as `fill.py`. It does not
 fill the 80 ordinary messages; the runner's preparation should do that via HTTP.
+Preparation and server startup reject a different dataset: exactly one active administrator and
+open room (both id 1), one mentions membership and no push subscriptions are required. Names and
+credentials must match `fill.py`, since names affect every message's payload. Existing valid data
+is preserved; use a fresh isolated work directory for older Rage fixtures named David/Everyone.
 
 The implemented routes are `/up`, `/`, `/session/new`, `/session`, `/rooms/:id`,
 `/users/me/sidebar`, `/rooms/:room_id/messages` and `/cable`. Login uses the reference password
@@ -74,7 +79,7 @@ bundle exec ruby test/benchmark_test.rb
 ```
 
 It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
-Ten tests cover HTTP and Cable cookie authentication, three scrape streams, six protocol
+Thirteen tests cover benchmark dataset validation, HTTP and Cable cookie authentication, three scrape streams, six protocol
 confirmations, signed-stream/membership guards, presence counts and disconnect, full message
 HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
 queries, plus fiber-local `Current` cleanup. Tests use the same synchronous fiber shim as
