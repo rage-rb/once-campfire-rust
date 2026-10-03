@@ -45,7 +45,10 @@ Deliberate benchmark differences:
 - Forgery protection and login rate limiting are disabled for this controlled benchmark. The
   existing runner posts an empty token; scrape exposes a placeholder. The Action View host also
   disables forgery protection, so inactive reaction forms omit CSRF hidden inputs. Include the
-  actual frame size in comparisons; do not claim exact wire-byte parity until validated.
+  actual frame size in comparisons. Tests compare complete HTML and JSON frames with the
+  untouched reference ERB: with matching host/data and CSRF off they are byte-identical.
+  Enabling Rails' eight masked reaction-form tokens adds 1,152 HTML bytes / 1,280
+  uncompressed JSON-frame bytes. Rust also deliberately omits these tokens.
 - The Rails fragment cache is an in-process MemoryStore rather than Redis, without changing the
   two render calls. No Redis service, Resque process or Action Cable server handles requests.
 - Native Rage::Deferred uses its disk WAL and executes push lookup in the same process. The
@@ -62,3 +65,18 @@ scrape, full 9,199-byte Turbo response, and one real loadgen client with all six
 zero failures, one complete paced marker and 86/86 complete saturated messages over one second.
 These are functional checks, not performance measurements; later stages add tests and the shared
 100-client runner before real Raspberry Pi measurements.
+
+Run the focused acceptance suite with the bundled reference test dependencies:
+
+```sh
+cd bench/rage
+bundle exec ruby test/benchmark_test.rb
+```
+
+It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
+Ten tests cover HTTP and Cable cookie authentication, three scrape streams, six protocol
+confirmations, signed-stream/membership guards, presence counts and disconnect, full message
+HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
+queries, plus fiber-local `Current` cleanup. Tests use the same synchronous fiber shim as
+`rage/rspec` and substitute socket transport/timers; live Iodine scheduling, pings and networking
+are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
