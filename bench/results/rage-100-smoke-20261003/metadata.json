@@ -60,5 +60,17 @@
     "account": "Campfire",
     "user": "David Hansson",
     "room": "All Talk"
+  },
+  "external_branch_check": {
+    "topology": "localhost simulation; separately owned Rage server",
+    "clients": 100,
+    "ready": 100,
+    "failed": 0,
+    "paced_posted_complete": 1,
+    "saturated_attempted_posted_complete": 199,
+    "initial_http_fill_messages": 80,
+    "final_messages": 280,
+    "runner_preserved_server": true,
+    "sampler_app_metrics": false
   }
 }

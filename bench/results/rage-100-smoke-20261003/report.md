@@ -1,6 +1,6 @@
 # Rust / Rage 100-client functional benchmark checks
 
-All four runs passed the updated common runner: **100 ready clients, six subscriptions per client,
+All five runs passed the updated common runner: **100 ready clients, six subscriptions per client,
 zero failed clients, zero HTTP failures, every paced and saturated marker received by all clients**.
 This is a functional acceptance run on one macOS ARM64 machine. App and loadgen both used localhost;
 these rates are not Raspberry Pi measurements or estimates, and do not represent a physical network.
@@ -83,3 +83,13 @@ the September orchestration, so this is not an exact replay of its CPU-quota/aff
 The real Pi / external Ethernet / 100,000-client run remains to be performed on the user's hardware.
 No Pi connection details were available during this stage. Committed artifacts include only
 result JSON, phase logs, samples, summaries and fixture counts; work databases/cookies are excluded.
+
+Additional external-branch check: a separately launched Rage server on `http://127.0.0.1:4568`,
+with fresh server and client WORKs, passed `BASE=http://127.0.0.1:4568 PREPARED=1 SOURCES=""`
+`run100k.sh - rage-external-localhost 100 --hold-secs 0 --latency-msgs 1 --tput-secs 1`.
+All 100 clients confirmed six subscriptions, the one paced and 199 saturated POSTs were received
+by all clients, and no HTTP/client failures occurred. The runner left the separately owned server
+alive and sampled only the loadgen, with empty app metrics. Its final 280 message rows confirm the
+80-message HTTP preparation. This simulates process ownership/orchestration on localhost and does
+not validate Pi hardware or assigned-LAN-source routing. Raw artifacts use the
+`rage-external-localhost` label.

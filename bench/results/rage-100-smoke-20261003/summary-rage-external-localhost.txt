@@ -1,0 +1,4 @@
+
+rage-external-localhost ready 100 failed 0 connect_s 0.19 post->all p50/p99 15.463 15.463 saturated attempted/posted/complete 199 199 199 post_failed 0 wire MB/s 233.5 compressed clients 0
+External runner preserved separately owned Rage server
+External samples contain only loadgen;80-message HTTP preparation confirmed;final messages 280
