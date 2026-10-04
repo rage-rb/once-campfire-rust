@@ -20,7 +20,7 @@ print(label, 'ready', r['ready'], 'failed', r['failed'], 'connect_s', r['connect
       'post->all p50/p99', latency['all_clients'].get('p50_ms'), latency['all_clients'].get('p99_ms'),
       'saturated attempted/posted/complete', throughput['attempted'], throughput['posted'], throughput['complete'],
       'post_failed', throughput['post_failed'], 'wire MB/s', throughput.get('wire_mb_per_sec'),
-      'compressed clients', r['compressed_clients'])
+      'negotiated compression clients', r['compressed_clients'], 'inflated frames', r.get('inflated_frames'))
 rows = [json.loads(line) for line in open(f'{work}/samp-{label}.jsonl')]
 phases = {}
 for line in open(f'{work}/cable-{label}.err'):

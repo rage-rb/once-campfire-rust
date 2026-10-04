@@ -383,6 +383,7 @@ struct Delivery {
     /// Bytes/frames read off the sockets (`--wire` or `--deflate`): what the network carries.
     wire_bytes: AtomicU64,
     wire_frames: AtomicU64,
+    inflated_frames: AtomicU64,
     compressed_clients: AtomicUsize,
 }
 
@@ -589,9 +590,9 @@ async fn measured_cable_client(
             0x1 => {}
             _ => continue,
         }
-        // Benchmark tolerance: use negotiated compression and the JSON payload,
-        // without consulting RSV1. Small protocol frames may remain plain JSON.
-        let inflate = compressed && !std::str::from_utf8(&payload).is_ok_and(|s| serde_json::from_str::<Value>(s).is_ok());
+        // Benchmark tolerance: --deflate also decodes Rage's unconditional Zlib
+        // payloads without extension negotiation or RSV1. Small frames stay JSON.
+        let inflate = offer_deflate && !std::str::from_utf8(&payload).is_ok_and(|s| serde_json::from_str::<Value>(s).is_ok());
         let message = if inflate {
             inflater.reset(false);
             payload.extend_from_slice(&[0, 0, 0xff, 0xff]);
@@ -605,7 +606,9 @@ async fn measured_cable_client(
                 }
                 text.reserve(text.capacity());
             }
-            std::str::from_utf8(&text)?
+            let message = std::str::from_utf8(&text)?;
+            delivery.inflated_frames.fetch_add(1, Ordering::Relaxed);
+            message
         } else {
             std::str::from_utf8(&payload)?
         };
@@ -726,6 +729,7 @@ async fn cable(a: &Args) -> Res<Value> {
         receipts: AtomicU64::new(0),
         wire_bytes: AtomicU64::new(0),
         wire_frames: AtomicU64::new(0),
+        inflated_frames: AtomicU64::new(0),
         compressed_clients: AtomicUsize::new(0),
     });
     let confirmed = Arc::new(AtomicUsize::new(0));
@@ -891,6 +895,7 @@ async fn cable(a: &Args) -> Res<Value> {
         "subscriptions_per_client": subs.len(),
         "deflate_offered": deflate,
         "compressed_clients": delivery.compressed_clients.load(Ordering::Relaxed),
+        "inflated_frames": delivery.inflated_frames.load(Ordering::Relaxed),
         "wire_measured": measure_wire,
         "latency": latency,
         "throughput": throughput,
@@ -1059,8 +1064,8 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
-    async fn deflate_accepts_plain_json_and_compressed_frames_without_rsv1() {
-        for opcode in [0x81, 0xc1] {
+    async fn deflate_accepts_plain_json_and_compressed_frames_without_negotiation_or_rsv1() {
+        for (opcode, negotiated) in [(0x81, false), (0x81, true), (0xc1, true)] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap().to_string();
             let delivery = Arc::new(Delivery {
@@ -1070,6 +1075,7 @@ mod tests {
                 receipts: AtomicU64::new(0),
                 wire_bytes: AtomicU64::new(0),
                 wire_frames: AtomicU64::new(0),
+                inflated_frames: AtomicU64::new(0),
                 compressed_clients: AtomicUsize::new(0),
             });
             let stop = Arc::new(AtomicBool::new(false));
@@ -1086,10 +1092,8 @@ mod tests {
                     request.extend_from_slice(&buffer[..n]);
                 }
                 assert!(String::from_utf8_lossy(&request).contains("Sec-WebSocket-Extensions: permessage-deflate"));
-                socket
-                    .write_all(b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n")
-                    .await
-                    .unwrap();
+                let extension = if negotiated { "Sec-WebSocket-Extensions: permessage-deflate\r\n" } else { "" };
+                socket.write_all(format!("HTTP/1.1 101 Switching Protocols\r\n{extension}\r\n").as_bytes()).await.unwrap();
                 for text in [r#"{"type":"welcome"}"#, r#"{"type":"confirm_subscription"}"#, r#"{"type":"ping","message":1}"#] {
                     let mut frame = vec![0x81, text.len() as u8];
                     frame.extend_from_slice(text.as_bytes());
@@ -1133,7 +1137,8 @@ mod tests {
             .unwrap();
             server.await.unwrap();
             assert_eq!(confirmed.load(Ordering::Relaxed), 1);
-            assert_eq!(delivery.compressed_clients.load(Ordering::Relaxed), 1);
+            assert_eq!(delivery.compressed_clients.load(Ordering::Relaxed), usize::from(negotiated));
+            assert_eq!(delivery.inflated_frames.load(Ordering::Relaxed), 1);
             assert_eq!(delivery.got.lock().unwrap()[&1].0, 1);
             assert!(delivery.wire_frames.load(Ordering::Relaxed) >= 4);
         }
@@ -1171,6 +1176,7 @@ mod tests {
                 receipts: AtomicU64::new(0),
                 wire_bytes: AtomicU64::new(0),
                 wire_frames: AtomicU64::new(0),
+                inflated_frames: AtomicU64::new(0),
                 compressed_clients: AtomicUsize::new(0),
             };
             let mut sender = None;

@@ -37,6 +37,7 @@ class BenchmarkTest < Minitest::Test
   include ActiveSupport::Testing::TimeHelpers
 
   def run
+    @publications = []
     # Same synchronous fiber shim as rage/rspec; no reactor in unit tests.
     # Timers are suppressed, but Deferred writes use its real disk backend.
     schedule = ->(&block) do
@@ -51,7 +52,7 @@ class BenchmarkTest < Minitest::Test
       Fiber.stub(:await, ->(fibers) { Array(fibers).map(&:__get_result) }) do
         Iodine.stub(:run_after, ->(*) {}) do
           Iodine.stub(:run_every, ->(*) {}) do
-            Iodine.stub(:publish, ->(*) {}) do
+            Iodine.stub(:publish, ->(name, payload, *) { @publications << [name, payload] }) do
               # Each test owns a fresh Current context, just like a Rage request/task.
               fiber = Fiber.new(blocking: true) { super }
               fiber.resume

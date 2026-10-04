@@ -87,7 +87,7 @@ CSRF=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("csrf
 load_wrap=()
 [ -z "${LOADGEN_CPUS:-}" ] || load_wrap=(taskset -c "$LOADGEN_CPUS")
 ${load_wrap[@]+"${load_wrap[@]}"} "$LOADGEN" cable --base "$BASE" --cookie "$COOKIE" --csrf "$CSRF" --room 1 --streams "$STREAMS" \
-  --clients "$N" --sources "$SOURCES" --hold-secs 30 --latency-msgs 10 --tput-secs 10 --posters 2 --wire 1 "$@" \
+  --clients "$N" --sources "$SOURCES" --hold-secs 30 --latency-msgs 10 --tput-secs 10 --posters 2 --wire 1 --deflate 1 "$@" \
   > "$WORK/cable-$LABEL.json" 2> "$WORK/cable-$LABEL.err" & LOAD_PID=$!
 python3 "$REPO/bench/sample_process.py" --app "${APP_PID:-0}" --loadgen "$LOAD_PID" > "$WORK/samp-$LABEL.jsonl" & SAMPLER=$!
 status=0

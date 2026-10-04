@@ -60,9 +60,16 @@ Deliberate benchmark differences:
 - Native Rage::Deferred executes push lookup in the app runtime; the configured disk backend
   uses a WAL, while `nil` keeps scheduling in memory. The benchmark pool evaluates the reference subscriptions and raises if any real recipient exists;
   network push delivery and webhook jobs are outside the intended one-user, no-bot dataset.
-- Rage/Iodine uses its stock Action Cable JSON protocol with three-second pings and no advertised
-  `permessage-deflate` support. Report actual uncompressed frame/on-wire lengths. Active Support's
-  `to_json` supplies Rails HTML escaping; never pre-encode the broadcast string.
+- Cable serializes the complete Action Cable envelope, then unconditionally compresses payloads
+  of at least 256 bytes through Ruby Zlib before Iodine fan-out. Like Rust, it uses level-6 raw
+  deflate, a fresh stream per message, and sync flush with the four-byte trailer removed. Each
+  distinct subscription identifier is compressed once per broadcast, rather than per client.
+  Small messages and three-second pings remain JSON. Active Support's `to_json` supplies Rails
+  HTML escaping; the inflated envelope retains the reference content.
+- Iodine still sends text frames without advertising `permessage-deflate` or setting RSV1. This
+  benchmark transport requires loadgen's `--deflate 1`; it is not compatible with standard browser
+  WebSocket clients. Compare actual compressed payload/on-wire lengths, allowing for frame headers
+  and differences between Ruby Zlib and Rust's deflate implementation. Compression has no app toggle.
 - Runtime production log level defaults to warn. Development reloading is outside this slice;
   use production or test mode when validating against the pinned Rails development version.
 
@@ -78,12 +85,12 @@ bundle exec ruby test/benchmark_test.rb
 ```
 
 It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
-Thirteen tests cover benchmark dataset validation, HTTP and Cable cookie authentication,
+Fourteen tests cover benchmark dataset validation, HTTP and Cable cookie authentication,
 three scrape streams, six protocol confirmations, signed-stream/membership guards, presence counts and disconnect, full message
 HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
-queries, plus request/task fiber isolation. Tests use the same synchronous fiber shim as `rage/rspec`
-and substitute socket transport/timers; live Iodine scheduling, pings and networking are checked
-by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
+queries, plus request/task fiber isolation, Zlib round-trips and compression before fan-out. Tests use
+the same synchronous fiber shim as `rage/rspec` and substitute socket transport/timers; live Iodine scheduling, pings and networking
+are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
 
 ## Shared runner and local smoke
 
@@ -107,12 +114,13 @@ Subsequent runs with the same WORK reuse the cookie and scrape, preserving the i
 fill but accumulating benchmark messages. Use fresh WORKs for measured comparisons.
 
 The default measured phases remain 30 seconds idle, 10 paced markers at 200 ms intervals and two
-closed-loop posters for 10 seconds, then delivery drain. `--wire 1` counts actual WebSocket bytes
-and frames with compression disabled for a comparable raw transport. Add `--deflate 1` to offer
-browser compression; JSON reports both the offer and number of sockets that negotiated it.
-Rust accepts it; stock Rage/Iodine declines it. The benchmark client ignores RSV1,
-accepts plain JSON protocol frames and inflates other text payloads when compression was negotiated. A comparison with that offer measures each native
-transport, including the compression difference. `frames_per_sec` now includes all socket frames
+closed-loop posters for 10 seconds, then delivery drain. The runner defaults to `--wire 1 --deflate 1`:
+it counts actual WebSocket bytes/frames and offers compression. Rust negotiates it; Iodine does not.
+In this benchmark mode the client accepts plain JSON and inflates other text payloads regardless
+of negotiation or RSV1. JSON reports negotiated sockets (`compressed_clients`) separately from
+successfully inflated frames (`inflated_frames`), so Rage's zero negotiated sockets does not imply
+uncompressed traffic. Rust can still use `--deflate 0`; Rage requires `--deflate 1` with this commit.
+`frames_per_sec` now includes all socket frames
 (pings/unreads included); `deliveries_per_sec` retains the separate marked-delivery count.
 No measured wire count is represented as zero when `--wire 0 --deflate 0` disables observation.
 
@@ -156,8 +164,8 @@ SAMPLE_PID=$!
 For Rust, use a separate WORK and the same key/storage exports, then replace Rage preparation and
 launch with `DISABLE_SSL=1 HTTP_PORT=4555 TARGET_PORT=4556 target/release/campfire server`.
 Its empty database first-run flow is prepared remotely by `fill.py`; use `PREPARED=0` below.
-Run the servers one at a time on the same Pi port. A single Rage worker/thread is deliberate;
-if changing the worker topology, aggregate every worker's CPU/memory and disclose it.
+Run the servers one at a time on the same Pi port. Disclose the configured Rage worker/thread
+topology and aggregate every worker's CPU/memory.
 
 On the separate Linux load host:
 
@@ -167,7 +175,7 @@ On the separate Linux load host:
 export PI_BASE=http://192.168.1.50:4555
 export LAN_SOURCES=192.168.1.101,192.168.1.102,192.168.1.103,192.168.1.104
 WORK="$PWD/bench/.work/rage-pi-client" BASE="$PI_BASE" PREPARED=1 SOURCES="$LAN_SOURCES" \
-  bench/results/pi-100k-20260928/run100k.sh - rage-pi 100000 --deflate 0
+  bench/results/pi-100k-20260928/run100k.sh - rage-pi 100000 --deflate 1
 # Rust: fresh Pi storage and load-host WORK, PREPARED=0, label rust-pi, same workload.
 ```
 
@@ -180,3 +188,6 @@ Unix timestamps. The sampler reports one PID; aggregate all workers when using a
 
 Runner regression checks: `python3 -m unittest bench/test_cable_report.py` and
 `CARGO_TARGET_DIR=target/bench cargo test --manifest-path bench/loadgen/Cargo.toml`.
+
+The Ruby Zlib compression checks and paired local measurements are recorded in
+[`../results/rage-zlib-20261004/report.md`](../results/rage-zlib-20261004/report.md).

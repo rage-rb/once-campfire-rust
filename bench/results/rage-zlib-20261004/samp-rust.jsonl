@@ -1,0 +1,7 @@
+{"time": 1791130683.592208, "app": {"cpu_seconds": 0.47, "memory_kb": 55248, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 0.02, "memory_kb": 7840, "memory_kind": "RSS"}}
+{"time": 1791130684.601957, "app": {"cpu_seconds": 0.48, "memory_kb": 56176, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 0.02, "memory_kb": 12624, "memory_kind": "RSS"}}
+{"time": 1791130685.61329, "app": {"cpu_seconds": 2.23, "memory_kb": 76816, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 2.41, "memory_kb": 23808, "memory_kind": "RSS"}}
+{"time": 1791130686.62725, "app": {"cpu_seconds": 6.03, "memory_kb": 100816, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 7.41, "memory_kb": 28880, "memory_kind": "RSS"}}
+{"time": 1791130687.644029, "app": {"cpu_seconds": 9.77, "memory_kb": 112704, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 12.3, "memory_kb": 33728, "memory_kind": "RSS"}}
+{"time": 1791130688.658305, "app": {"cpu_seconds": 13.53, "memory_kb": 119136, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 17.22, "memory_kb": 33760, "memory_kind": "RSS"}}
+{"time": 1791130689.670793, "app": {"cpu_seconds": 17.32, "memory_kb": 122112, "memory_kind": "RSS"}, "loadgen": {"cpu_seconds": 22.13, "memory_kb": 43456, "memory_kind": "RSS"}}

@@ -198,7 +198,11 @@ class MessageWorkloadTest < BenchmarkTest
     assert_equal reference, rage
     params = stream_params("RoomMessagesChannel", @room, :messages)
     expected = ActiveSupport::JSON.encode(identifier: params.to_json, message: reference)
-    frame = Rage.cable.__protocol.serialize(params, rage)
+    payload = Rage.cable.__protocol.serialize(params, rage)
+    frame = inflate_payload(payload)
+    assert_equal Encoding::UTF_8, payload.encoding
+    assert_operator payload.bytesize, :<, frame.bytesize / 3
+    assert_equal expected, inflate_payload(Rage.cable.__protocol.serialize(params, rage))
     assert_equal expected, frame
     assert_equal params.to_json, JSON.parse(frame)["identifier"]
     assert_equal rage, JSON.parse(frame)["message"]
@@ -218,7 +222,7 @@ class MessageWorkloadTest < BenchmarkTest
     normalized = csrf_reference.gsub(/<input[^>]*name="authenticity_token"[^>]*>/, "")
     assert_equal rage, normalized
     csrf_frame = ActiveSupport::JSON.encode(identifier: params.to_json, message: csrf_reference)
-    puts "Payload check: no-CSRF HTML=#{rage.bytesize}, frame=#{frame.bytesize}; Rails CSRF HTML=#{csrf_reference.bytesize}, frame=#{csrf_frame.bytesize}"
+    puts "Payload check: no-CSRF HTML=#{rage.bytesize}, frame=#{frame.bytesize}, deflated=#{payload.bytesize}; Rails CSRF HTML=#{csrf_reference.bytesize}, frame=#{csrf_frame.bytesize}"
   ensure
     ReferenceMessagesController.allow_forgery_protection = false
   end
@@ -242,6 +246,34 @@ class MessageWorkloadTest < BenchmarkTest
       assert_nil Current.user
       assert_nil Current.request
     end
+  end
+
+  def test_compression_precedes_fanout_and_keeps_small_messages_plain
+    protocol = Rage.cable.__protocol
+    params = { channel: "HeartbeatChannel" }
+    stream = "compression-test"
+    2.times { protocol.subscribe(Socket.new(env), stream, params) }
+    @publications.clear
+    data = "fanout bmk1z #{'body ' * 100}"
+    deflate = Zlib::Deflate.method(:new)
+    compressions = 0
+    Zlib::Deflate.stub(:new, ->(*args) { compressions += 1; deflate.call(*args) }) do
+      Rage::Cable.broadcast(stream, data)
+    end
+    assert_equal 1, compressions
+    assert_equal 1, @publications.size
+    assert_equal({ "identifier" => params.to_json, "message" => data }, JSON.parse(inflate_payload(@publications.first.last)))
+    assert_equal({ "identifier" => params.to_json, "message" => { "room_id" => 1 } },
+      JSON.parse(protocol.serialize(params, { room_id: 1 })))
+  end
+
+  private
+
+  def inflate_payload(payload)
+    inflater = Zlib::Inflate.new(-Zlib::MAX_WBITS)
+    inflater.inflate(payload.b + "\x00\x00\xff\xff".b).force_encoding(Encoding::UTF_8)
+  ensure
+    inflater&.close
   end
 end
 

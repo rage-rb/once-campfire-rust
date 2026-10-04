@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 Rails.application.config.after_initialize do
+  Rage::Cable::Protocols::ActioncableV1Json.singleton_class.prepend(BenchmarkCableCompression)
   # The benchmark client names the stock Turbo class. Replace its runtime while
   # retaining the real Turbo signing helpers and signature key.
   Turbo.send(:remove_const, :StreamsChannel)
