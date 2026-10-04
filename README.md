@@ -117,7 +117,7 @@ against Rails. See [`parity/SCREENS.md`](parity/SCREENS.md) for coverage and mas
 
 ## Known differences
 
-The optional [Rage benchmark slice](bench/rage/README.md) serves the 100k workload using Rage HTTP/Cable and the reference Rails data/view libraries. Its setup pages, disabled benchmark CSRF/rate limiting, memory fragment cache, native WAL-backed Deferred queue and uncompressed WebSockets are documented there; it is separate from the Rust application.
+The optional [Rage benchmark slice](bench/rage/README.md) serves the 100k workload using Rage HTTP/Cable and the reference Rails data/view libraries. Its setup pages, disabled benchmark CSRF/rate limiting, memory fragment cache, configurable native Deferred queue and uncompressed WebSockets are documented there; it is separate from the Rust application.
 
 The app keeps the Rails database, storage and current cookie formats compatible. Deliberate
 behavior changes and compatibility limits are listed below.

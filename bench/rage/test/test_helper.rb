@@ -14,6 +14,11 @@ require "minitest/mock"
 require "rack/mock"
 require "active_support/testing/time_helpers"
 
+# Exercise durable enqueue independently of the benchmark's selected backend.
+Rage.configure do
+  config.deferred.backend = [:disk, { path: "#{TEST_STORAGE}/deferred" }]
+end
+
 ActiveRecord::Schema.verbose = false
 load "#{CampfireBenchmark::REFERENCE}/db/schema.rb"
 
@@ -34,12 +39,10 @@ class BenchmarkTest < Minitest::Test
   def run
     # Same synchronous fiber shim as rage/rspec; no reactor in unit tests.
     # Timers are suppressed, but Deferred writes use its real disk backend.
-    @completed_current = []
     schedule = ->(&block) do
       fiber = Fiber.new(blocking: true) do
         Fiber.current.__set_id
         Fiber.current.__set_result(block.call)
-        @completed_current << Current.attributes.dup
       end
       fiber.resume
       fiber
@@ -47,14 +50,19 @@ class BenchmarkTest < Minitest::Test
     Fiber.stub(:schedule, schedule) do
       Fiber.stub(:await, ->(fibers) { Array(fibers).map(&:__get_result) }) do
         Iodine.stub(:run_after, ->(*) {}) do
-          Iodine.stub(:run_every, ->(*) {}) { Iodine.stub(:publish, ->(*) {}) { super } }
+          Iodine.stub(:run_every, ->(*) {}) do
+            Iodine.stub(:publish, ->(*) {}) do
+              # Each test owns a fresh Current context, just like a Rage request/task.
+              fiber = Fiber.new(blocking: true) { super }
+              fiber.resume
+            end
+          end
         end
       end
     end
   end
 
   def setup
-    Current.reset
     Rails.cache.clear
     db = ActiveRecord::Base.connection
     db.disable_referential_integrity do
@@ -66,15 +74,12 @@ class BenchmarkTest < Minitest::Test
     Rage::Deferred.__backend.pending_tasks.each { |id, _| Rage::Deferred.__backend.remove_task(id) }
     Account.create!(name: FirstRun::ACCOUNT_NAME)
     @user = User.create!(id: 1, name: "David Hansson", email_address: "david@example.com", password: "secret123456", role: :administrator)
-    Current.user = @user
-    @room = Rooms::Open.create_for({ id: 1, name: FirstRun::FIRST_ROOM_NAME }, users: [@user])
-    Current.reset
+    @room = Rooms::Open.create_for({ id: 1, name: FirstRun::FIRST_ROOM_NAME, creator: @user }, users: [@user])
     @http = Rack::MockRequest.new(Rage.application)
     @broadcasts = []
   end
 
   def teardown
-    Current.reset
     travel_back
   end
 

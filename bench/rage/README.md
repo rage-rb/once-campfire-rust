@@ -1,6 +1,6 @@
 # Rage benchmark slice
 
-This is the authenticated message/Cable slice, using Rage 1.28.0
+This is the authenticated message/Cable slice, using Rage 1.28.0.
 It serves benchmark HTTP and all six Cable subscriptions through Rage,
 while Rails supplies Active Record, Action Text, Action View, Turbo signing, and code loading.
 The pinned `reference/` models, helpers, ERB and route helpers are read directly, never modified.
@@ -19,7 +19,7 @@ HTTP_PORT=4555 bench/rage/bin/server
 ```
 
 `bin/server` accepts the runner's unused `server` argument, preserves the storage path and maps
-`HTTP_PORT` to Rage's port. It runs one worker in production, with in-process Cable and Deferred.
+`HTTP_PORT` to Rage's port. Worker count and Deferred persistence follow `config/application.rb`; Cable and jobs run in the app runtime.
 `DATABASE_PATH` can select an existing compatible SQLite database. Use an isolated benchmark copy:
 messages, sessions and membership presence are real writes. `bin/prepare` loads the exact reference
 schema only into an empty database, then calls the reference `FirstRun.create!` with the same
@@ -34,8 +34,9 @@ The implemented routes are `/up`, `/`, `/session/new`, `/session`, `/rooms/:id`,
 `/users/me/sidebar`, `/rooms/:room_id/messages` and `/cable`. Login uses the reference password
 check, Session model and Rails signed cookie jar. HTTP and Cable share the same session lookup.
 Turbo signatures use the reference key derivation and `campfire` GlobalIDs, so existing preparation
-artifacts can be shared when the secret and data match. Each HTTP action and deferred task resets
-fiber-local `Current`; Cable authenticates without changing it.
+artifacts can be shared when the secret and data match. Rage executes each HTTP request and
+deferred task in a fresh fiber, isolating `Current` without manual resets. Cable authenticates
+without changing it.
 
 Every POST preserves reference message/rich-text persistence, room touch, FTS insert, unread
 membership updates, native Deferred push enqueue, both empty push recipient queries, the empty bot
@@ -56,8 +57,8 @@ Deliberate benchmark differences:
   uncompressed JSON-frame bytes. Rust also deliberately omits these tokens.
 - The Rails fragment cache is an in-process MemoryStore rather than Redis, without changing the
   two render calls. No Redis service, Resque process or Action Cable server handles requests.
-- Native Rage::Deferred uses its disk WAL and executes push lookup in the same process. The
-  benchmark pool evaluates the reference subscriptions and raises if any real recipient exists;
+- Native Rage::Deferred executes push lookup in the app runtime; the configured disk backend
+  uses a WAL, while `nil` keeps scheduling in memory. The benchmark pool evaluates the reference subscriptions and raises if any real recipient exists;
   network push delivery and webhook jobs are outside the intended one-user, no-bot dataset.
 - Rage/Iodine uses its stock Action Cable JSON protocol with three-second pings and no advertised
   `permessage-deflate` support. Report actual uncompressed frame/on-wire lengths. Active Support's
@@ -77,12 +78,12 @@ bundle exec ruby test/benchmark_test.rb
 ```
 
 It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
-Thirteen tests cover benchmark dataset validation, HTTP and Cable cookie authentication, three scrape streams, six protocol
-confirmations, signed-stream/membership guards, presence counts and disconnect, full message
+Thirteen tests cover benchmark dataset validation, HTTP and Cable cookie authentication,
+three scrape streams, six protocol confirmations, signed-stream/membership guards, presence counts and disconnect, full message
 HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
-queries, plus fiber-local `Current` cleanup. Tests use the same synchronous fiber shim as
-`rage/rspec` and substitute socket transport/timers; live Iodine scheduling, pings and networking
-are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
+queries, plus request/task fiber isolation. Tests use the same synchronous fiber shim as `rage/rspec`
+and substitute socket transport/timers; live Iodine scheduling, pings and networking are checked
+by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
 
 ## Shared runner and local smoke
 
@@ -109,7 +110,8 @@ The default measured phases remain 30 seconds idle, 10 paced markers at 200 ms i
 closed-loop posters for 10 seconds, then delivery drain. `--wire 1` counts actual WebSocket bytes
 and frames with compression disabled for a comparable raw transport. Add `--deflate 1` to offer
 browser compression; JSON reports both the offer and number of sockets that negotiated it.
-Rust accepts it; stock Rage/Iodine declines it. A comparison with that offer measures each native
+Rust accepts it; stock Rage/Iodine declines it. The benchmark client ignores RSV1,
+accepts plain JSON protocol frames and inflates other text payloads when compression was negotiated. A comparison with that offer measures each native
 transport, including the compression difference. `frames_per_sec` now includes all socket frames
 (pings/unreads included); `deliveries_per_sec` retains the separate marked-delivery count.
 No measured wire count is represented as zero when `--wire 0 --deflate 0` disables observation.
@@ -133,7 +135,8 @@ only the loadgen on its own host; sample the one-process app separately on the P
 On the Pi, install this checkout's pinned Ruby/bundle (or build Rust), keep the `reference/`
 submodule checked out, and arrange an open-file limit above the socket count on both machines
 (for example `ulimit -n 200000`, with a corresponding hard limit). No emulated CPU quota is used.
-The following launches Rage and samples its actual single worker/process:
+The following launches Rage and samples its parent PID. The original results used one worker;
+with multiple workers, collect and aggregate every worker PID as well:
 
 ```sh
 # Pi, repository root. Choose a fresh WORK for each measured comparison.
@@ -173,7 +176,7 @@ are rejected in external mode. Four sources suffice only when the configured eph
 provides at least 25,000 available ports each; additional sources or cooldown may be needed between
 runs. Connect through Ethernet to measure the real network limit. First validate 100, then 1,000
 and 10,000 clients before 100,000. Synchronize clocks if merging Pi samples with load-host PHASE
-Unix timestamps. The sampler reports one PID; the native Rage launch uses one process.
+Unix timestamps. The sampler reports one PID; aggregate all workers when using a multiprocess configuration.
 
 Runner regression checks: `python3 -m unittest bench/test_cable_report.py` and
 `CARGO_TARGET_DIR=target/bench cargo test --manifest-path bench/loadgen/Cargo.toml`.

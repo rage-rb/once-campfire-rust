@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class BenchmarkController < RageController::API
-  around_action :set_current_request
+  before_action :set_current_request
   before_action :require_authentication
 
   private

@@ -589,7 +589,10 @@ async fn measured_cable_client(
             0x1 => {}
             _ => continue,
         }
-        let message = if head[0] & 0x40 != 0 && compressed {
+        // Benchmark tolerance: use negotiated compression and the JSON payload,
+        // without consulting RSV1. Small protocol frames may remain plain JSON.
+        let inflate = compressed && !std::str::from_utf8(&payload).is_ok_and(|s| serde_json::from_str::<Value>(s).is_ok());
+        let message = if inflate {
             inflater.reset(false);
             payload.extend_from_slice(&[0, 0, 0xff, 0xff]);
             text.clear();
@@ -1054,6 +1057,87 @@ async fn main() {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn deflate_accepts_plain_json_and_compressed_frames_without_rsv1() {
+        for opcode in [0x81, 0xc1] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            let delivery = Arc::new(Delivery {
+                sent: Mutex::new(HashMap::from([(1, Instant::now())])),
+                got: Mutex::new(HashMap::new()),
+                per_client: Mutex::new(hist()),
+                receipts: AtomicU64::new(0),
+                wire_bytes: AtomicU64::new(0),
+                wire_frames: AtomicU64::new(0),
+                compressed_clients: AtomicUsize::new(0),
+            });
+            let stop = Arc::new(AtomicBool::new(false));
+            let confirmed = Arc::new(AtomicUsize::new(0));
+            let connected = Arc::new(AtomicUsize::new(0));
+            let (server_delivery, server_stop) = (delivery.clone(), stop.clone());
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 4096];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = socket.read(&mut buffer).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&buffer[..n]);
+                }
+                assert!(String::from_utf8_lossy(&request).contains("Sec-WebSocket-Extensions: permessage-deflate"));
+                socket
+                    .write_all(b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n")
+                    .await
+                    .unwrap();
+                for text in [r#"{"type":"welcome"}"#, r#"{"type":"confirm_subscription"}"#, r#"{"type":"ping","message":1}"#] {
+                    let mut frame = vec![0x81, text.len() as u8];
+                    frame.extend_from_slice(text.as_bytes());
+                    socket.write_all(&frame).await.unwrap();
+                }
+                let text = json!({"identifier": "test", "message": format!("fanout bmk1z {}", "body ".repeat(100))}).to_string();
+                let mut compressor = flate2::Compress::new(flate2::Compression::default(), false);
+                let mut payload = Vec::with_capacity(text.len() + 1024);
+                compressor.compress_vec(text.as_bytes(), &mut payload, flate2::FlushCompress::Sync).unwrap();
+                assert_eq!(compressor.total_in(), text.len() as u64);
+                assert!(payload.ends_with(&[0, 0, 0xff, 0xff]));
+                payload.truncate(payload.len() - 4);
+                assert!(payload.len() < 126);
+                let mut frame = vec![opcode, payload.len() as u8];
+                frame.extend_from_slice(&payload);
+                socket.write_all(&frame).await.unwrap();
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while server_delivery.receipts.load(Ordering::Relaxed) != 1 {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .unwrap();
+                server_stop.store(true, Ordering::Relaxed);
+                socket.write_all(&[0x88, 0]).await.unwrap();
+            });
+            let permit = Arc::new(tokio::sync::Semaphore::new(1)).acquire_owned().await.unwrap();
+            measured_cable_client(
+                addr,
+                true,
+                None,
+                permit,
+                String::new(),
+                vec!["test".into()],
+                confirmed.clone(),
+                connected,
+                stop,
+                delivery.clone(),
+            )
+            .await
+            .unwrap();
+            server.await.unwrap();
+            assert_eq!(confirmed.load(Ordering::Relaxed), 1);
+            assert_eq!(delivery.compressed_clients.load(Ordering::Relaxed), 1);
+            assert_eq!(delivery.got.lock().unwrap()[&1].0, 1);
+            assert!(delivery.wire_frames.load(Ordering::Relaxed) >= 4);
+        }
+    }
 
     #[tokio::test]
     async fn post_requires_success_not_an_authentication_redirect() {

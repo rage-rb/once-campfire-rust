@@ -34,6 +34,8 @@ class HttpAuthenticationTest < BenchmarkTest
       assert rejected.closed
       assert_equal({ "type" => "disconnect", "reason" => "unauthorized", "reconnect" => false }, JSON.parse(rejected.writes.last))
     end
+    @user.update!(password: "secret&+=123456")
+    assert_equal 302, login(password: "secret&+=123456").status
   end
 
   def test_scrape_returns_exactly_three_reference_signed_sources
@@ -49,9 +51,7 @@ class HttpAuthenticationTest < BenchmarkTest
   end
 
   def test_membership_required_for_rooms_and_message_post
-    Current.user = @user
-    hidden = Rooms::Closed.create_for({ name: "Hidden" }, users: [])
-    Current.reset
+    hidden = Rooms::Closed.create_for({ name: "Hidden", creator: @user }, users: [])
     assert_equal 404, @http.get("/rooms/#{hidden.id}", "HTTP_COOKIE" => cookie).status
     before = Message.count
     response = @http.post("/rooms/#{hidden.id}/messages", "HTTP_COOKIE" => cookie,
@@ -102,9 +102,7 @@ class CableSubscriptionsTest < BenchmarkTest
   end
 
   def test_room_membership_signed_room_and_generic_turbo_guards
-    Current.user = @user
-    hidden = Rooms::Closed.create_for({ name: "Hidden" }, users: [])
-    Current.reset
+    hidden = Rooms::Closed.create_for({ name: "Hidden", creator: @user }, users: [])
     connected = socket
     rejected = [stream_params("RoomMessagesChannel", hidden, :messages),
       stream_params("RoomMessagesChannel", @user, :messages),
@@ -164,7 +162,6 @@ class MessageWorkloadTest < BenchmarkTest
     assert_includes response.body, "reply_composer_outlet".tr("_", "-")
     assert_nil Current.user
     assert_nil Current.request
-    assert @completed_current.all? { |attributes| attributes.values.all?(&:nil?) }
     queued = Rage::Deferred.__backend.pending_tasks.to_a
     assert_instance_of Rage::Deferred::Backends::Disk, Rage::Deferred.__backend
     assert_equal 1, queued.length
@@ -179,7 +176,8 @@ class MessageWorkloadTest < BenchmarkTest
       pushes << [payload, subscriptions.load.to_a]
     end
     Rails.configuration.x.web_push_pool = pool
-    assert_equal true, BenchmarkPushMessage.new.__perform(context)
+    task = Fiber.schedule { BenchmarkPushMessage.new.__perform(context) }
+    assert_equal true, Fiber.await([task]).first
     assert_equal 2, pushes.size
     assert pushes.all? { |_, subscriptions| subscriptions.empty? }
     assert_equal "David Hansson: #{message.plain_text_body}", pushes.first.first[:body]
@@ -225,7 +223,7 @@ class MessageWorkloadTest < BenchmarkTest
     ReferenceMessagesController.allow_forgery_protection = false
   end
 
-  def test_current_is_fiber_local_and_cleared_after_failed_request_and_task
+  def test_current_is_isolated_by_request_and_task_fibers
     Current.user = @user
     other = Fiber.new { assert_nil Current.user; Current.user = "other"; Fiber.yield; assert_equal "other", Current.user }
     other.resume
@@ -233,15 +231,17 @@ class MessageWorkloadTest < BenchmarkTest
     @http.get("/rooms/999999", "HTTP_COOKIE" => cookie)
     assert_equal @user, Current.user
     other.resume
-    controller = BenchmarkController.new(env, {})
-    assert_raises(RuntimeError) do
-      controller.send(:with_current) { Current.user = @user; raise "request failed" }
+    Fiber.schedule do
+      assert_nil Current.user
+      assert_nil Current.request
+      assert_raises(ActiveRecord::RecordNotFound) { BenchmarkPushMessage.new.perform(room_id: -1, message_id: -1) }
     end
-    assert_nil Current.user
-    Current.user = @user
-    assert_raises(ActiveRecord::RecordNotFound) { BenchmarkPushMessage.new.perform(room_id: -1, message_id: -1) }
-    assert_nil Current.user
+    assert_equal @user, Current.user
     assert_nil Current.request
+    Fiber.schedule do
+      assert_nil Current.user
+      assert_nil Current.request
+    end
   end
 end
 
