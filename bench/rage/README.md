@@ -136,15 +136,15 @@ orchestration in the September report.
 Local runs sample only PIDs launched by the runner, clean up those processes on exit, and refuse to
 launch over an already listening app. Linux records PSS and CPU from `/proc`; macOS records RSS and
 CPU from `ps` and labels that distinction. App CPU/memory exclude the loadgen. External mode samples
-only the loadgen on its own host; sample the one-process app separately on the Pi.
+only the loadgen on its own host; sample the complete app process tree separately on the Pi.
 
 ## Real Raspberry Pi 5 and external load host
 
 On the Pi, install this checkout's pinned Ruby/bundle (or build Rust), keep the `reference/`
 submodule checked out, and arrange an open-file limit above the socket count on both machines
 (for example `ulimit -n 200000`, with a corresponding hard limit). No emulated CPU quota is used.
-The following launches Rage and samples its parent PID. The original results used one worker;
-with multiple workers, collect and aggregate every worker PID as well:
+The following launches Rage and dynamically samples its complete process tree. For the current
+four-worker configuration, each record aggregates the Iodine master and all four workers:
 
 ```sh
 # Pi, repository root. Choose a fresh WORK for each measured comparison.
@@ -155,7 +155,7 @@ mkdir -p "$WORK"
 bench/rage/bin/prepare
 HTTP_PORT=4555 bench/rage/bin/server > "$WORK/log" 2>&1 &
 APP_PID=$!
-python3 bench/sample_process.py --app "$APP_PID" > "$WORK/app-samples.jsonl" &
+python3 bench/sample_process.py --app-tree "$APP_PID" > "$WORK/app-samples.jsonl" &
 SAMPLE_PID=$!
 # After the load-host run, stop these exact PIDs and retain app-samples.jsonl/log:
 # kill "$SAMPLE_PID" "$APP_PID"; wait "$SAMPLE_PID" "$APP_PID"
@@ -165,7 +165,7 @@ For Rust, use a separate WORK and the same key/storage exports, then replace Rag
 launch with `DISABLE_SSL=1 HTTP_PORT=4555 TARGET_PORT=4556 target/release/campfire server`.
 Its empty database first-run flow is prepared remotely by `fill.py`; use `PREPARED=0` below.
 Run the servers one at a time on the same Pi port. Disclose the configured Rage worker/thread
-topology and aggregate every worker's CPU/memory.
+topology; the process-tree sampler aggregates the master and every worker's CPU/memory.
 
 On the separate Linux load host:
 
@@ -184,9 +184,11 @@ are rejected in external mode. Four sources suffice only when the configured eph
 provides at least 25,000 available ports each; additional sources or cooldown may be needed between
 runs. Connect through Ethernet to measure the real network limit. First validate 100, then 1,000
 and 10,000 clients before 100,000. Synchronize clocks if merging Pi samples with load-host PHASE
-Unix timestamps. The sampler reports one PID; aggregate all workers when using a multiprocess configuration.
+Unix timestamps. Each app sample includes `process_count` and `pids` so the measured process tree
+can be audited; worker replacements are discovered on the next one-second sample.
 
-Runner regression checks: `python3 -m unittest bench/test_cable_report.py` and
+Runner regression checks:
+`python3 -m unittest bench/test_cable_report.py bench/test_sample_process.py` and
 `CARGO_TARGET_DIR=target/bench cargo test --manifest-path bench/loadgen/Cargo.toml`.
 
 The Ruby Zlib compression checks and paired local measurements are recorded in
