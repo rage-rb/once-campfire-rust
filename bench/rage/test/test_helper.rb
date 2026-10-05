@@ -81,6 +81,7 @@ class BenchmarkTest < Minitest::Test
   end
 
   def teardown
+    BenchmarkPresenceBatch.flush
     travel_back
   end
 
@@ -116,14 +117,27 @@ class BenchmarkTest < Minitest::Test
 
   def socket(cookie_value = cookie)
     socket = Socket.new(env(cookie_value))
-    Rage.cable.__protocol.on_open(socket)
+    cable_callback(:on_open, socket)
     socket
   end
 
   def subscribe(socket, params)
     identifier = params.to_json
-    Rage.cable.__protocol.on_message(socket, { command: "subscribe", identifier: identifier }.to_json)
+    cable_callback(:on_message, socket, { command: "subscribe", identifier: identifier }.to_json)
     [identifier, JSON.parse(socket.writes.last)]
+  end
+
+  def close_socket(socket)
+    cable_callback(:on_close, socket)
+  end
+
+  def cable_callback(method, socket, *args)
+    protocol = Rage.cable.__protocol
+    if protocol.method(method).parameters.any? { |_, name| name == :env }
+      protocol.public_send(method, socket, socket.env, *args)
+    else
+      protocol.public_send(method, socket, *args)
+    end
   end
 
   def stream_params(channel, *streams)

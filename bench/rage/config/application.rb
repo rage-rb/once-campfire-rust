@@ -42,6 +42,7 @@ module CampfireBenchmark
         config.server.workers_count = 4
         config.secret_key_base = ENV.fetch("SECRET_KEY_BASE")
         config.deferred.backend = nil
+        config.daemons << BenchmarkPresenceDaemon if BenchmarkPresenceBatch.enabled?
       end
     end
   end

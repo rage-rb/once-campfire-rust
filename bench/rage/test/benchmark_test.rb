@@ -63,6 +63,35 @@ class HttpAuthenticationTest < BenchmarkTest
 end
 
 class CableSubscriptionsTest < BenchmarkTest
+  def test_connection_authentication_loads_user_in_one_query_without_a_session_object
+    cookie_value = cookie
+    queries = []
+    instantiated = []
+    record_query = ->(_, _, _, _, payload) { queries << payload[:sql] if payload[:sql].start_with?("SELECT") }
+    record_instantiation = ->(_, _, _, _, payload) { instantiated << [payload[:class_name], payload[:record_count]] }
+    connected = nil
+    ActiveSupport::Notifications.subscribed(record_query, "sql.active_record") do
+      ActiveSupport::Notifications.subscribed(record_instantiation, "instantiation.active_record") do
+        connected = socket(cookie_value)
+      end
+    end
+    refute connected.closed
+    assert_equal @user, connected.env["rage.identified_by"][:current_user]
+    assert_equal({ "type" => "welcome" }, JSON.parse(connected.writes.first))
+    assert_equal 1, queries.size
+    assert_includes queries.first, 'INNER JOIN "sessions"'
+    assert_equal [["User", 1]], instantiated
+  end
+
+  def test_deleted_session_rejects_new_connections_with_a_valid_signed_cookie
+    cookie_value = cookie
+    refute socket(cookie_value).closed
+    Session.delete_all
+    rejected = socket(cookie_value)
+    assert rejected.closed
+    assert_equal({ "type" => "disconnect", "reason" => "unauthorized", "reconnect" => false }, JSON.parse(rejected.writes.last))
+  end
+
   def test_six_subscriptions_confirm_and_presence_writes_and_disconnects
     capture_broadcasts do
       connected = socket
@@ -70,17 +99,25 @@ class CableSubscriptionsTest < BenchmarkTest
       params = [stream_params("RoomMessagesChannel", @room, :messages),
         stream_params("Turbo::StreamsChannel", :rooms), stream_params("Turbo::StreamsChannel", @user, :rooms),
         { channel: "UnreadRoomsChannel" }, { channel: "PresenceChannel", room_id: @room.id }, { channel: "HeartbeatChannel" }]
-      params.each do |item|
-        identifier, response = subscribe(connected, item)
-        assert_equal({ "identifier" => identifier, "type" => "confirm_subscription" }, response)
+      membership_loads = 0
+      count_membership_loads = ->(_, _, _, _, payload) { membership_loads += 1 if payload[:name] == "Membership Load" }
+      ActiveSupport::Notifications.subscribed(count_membership_loads, "sql.active_record") do
+        params.each do |item|
+          identifier, response = subscribe(connected, item)
+          assert_equal({ "identifier" => identifier, "type" => "confirm_subscription" }, response)
+        end
       end
+      assert_equal 1, membership_loads
+      assert_equal(BenchmarkPresenceBatch.enabled? ? 0 : 1, @room.memberships.first.reload.connections)
+      BenchmarkPresenceBatch.flush
       assert_equal 6, connected.env["rage.cable"].size
       assert_equal 1, @room.memberships.first.reload.connections
       assert @room.memberships.first.connected?
       assert_includes @broadcasts, ["user_#{@user.id}_reads", { room_id: @room.id }]
       assert connected.streams.any? { |name| name.start_with?("cable:#{@room.to_gid_param}:messages:") }
-      assert connected.streams.any? { |name| name.start_with?("cable:user_#{@user.id}_unreads:") }
-      Rage.cable.__protocol.on_close(connected)
+      assert connected.streams.any? { |name| name.start_with?("cable:UnreadRoomsChannel:#{@user.id}:") }
+      close_socket(connected)
+      BenchmarkPresenceBatch.flush
       membership = @room.memberships.first.reload
       assert_equal 0, membership.connections
       assert_nil membership.connected_at
@@ -92,11 +129,14 @@ class CableSubscriptionsTest < BenchmarkTest
     capture_broadcasts do
       sockets = 2.times.map { socket }
       sockets.each { |connection| subscribe(connection, channel: "PresenceChannel", room_id: @room.id) }
+      BenchmarkPresenceBatch.flush
       assert_equal 2, @room.memberships.first.reload.connections
-      Rage.cable.__protocol.on_close(sockets.first)
+      close_socket(sockets.first)
+      BenchmarkPresenceBatch.flush
       assert_equal 1, @room.memberships.first.reload.connections
       assert @room.memberships.first.connected?
-      Rage.cable.__protocol.on_close(sockets.last)
+      close_socket(sockets.last)
+      BenchmarkPresenceBatch.flush
       assert_equal 0, @room.memberships.first.reload.connections
     end
   end

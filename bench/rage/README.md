@@ -32,11 +32,13 @@ is preserved; use a fresh isolated work directory for older Rage fixtures named 
 
 The implemented routes are `/up`, `/`, `/session/new`, `/session`, `/rooms/:id`,
 `/users/me/sidebar`, `/rooms/:room_id/messages` and `/cable`. Login uses the reference password
-check, Session model and Rails signed cookie jar. HTTP and Cable share the same session lookup.
-Turbo signatures use the reference key derivation and `campfire` GlobalIDs, so existing preparation
+check, Session model and Rails signed cookie jar. HTTP and Cable share cookie verification.
+Cable resolves the signed session token with one joined User/Session query, without instantiating
+a Session. HTTP still loads the Session and preserves activity refresh. Turbo signatures use the
+reference key derivation and `campfire` GlobalIDs, so existing preparation
 artifacts can be shared when the secret and data match. Rage executes each HTTP request and
-deferred task in a fresh fiber, isolating `Current` without manual resets. Cable authenticates
-without changing it.
+deferred task in a fresh fiber, isolating `Current` without manual resets. Cable pins a fiber
+to each connection and processes its callbacks in order. It authenticates without changing `Current`.
 
 Every POST preserves reference message/rich-text persistence, room touch, FTS insert, unread
 membership updates, native Deferred push enqueue, both empty push recipient queries, the empty bot
@@ -57,6 +59,22 @@ Deliberate benchmark differences:
   uncompressed JSON-frame bytes. Rust also deliberately omits these tokens.
 - The Rails fragment cache is an in-process MemoryStore rather than Redis, without changing the
   two render calls. No Redis service, Resque process or Action Cable server handles requests.
+- Cable authentication joins users to sessions for the verified token in one SELECT, rather
+  than loading a Session and then its User. It checks session existence on every connection
+  and retains the full User object, reference cookie verification, and rejection behavior.
+- Presence reuses one membership lookup within the subscription callback. A worker-scoped Rage
+  daemon flushes queued connect/disconnect/refresh events every **100 ms** by default. Each flush
+  takes the SQLite write lock with `BEGIN IMMEDIATE`, reads affected memberships once, replays
+  events in worker order, then executes one bulk UPDATE. Counts use the latest database state;
+  activity timestamps never move backwards when workers flush in a different order. Subscription
+  confirmation and the read-room broadcast can precede persisted presence/unread changes.
+  The nominal delay is 100 ms; scheduling, database contention and retries can extend it. Pending
+  events are in memory and are lost if a worker crashes. Deleted memberships are ignored.
+  Server startup resets previously connected memberships once before forking, matching
+  `reference/config/puma.rb`; fixture preparation does not reset presence.
+  This deliberately coalesces setup writes and serializes count updates compared with Rails.
+  `BENCHMARK_PRESENCE_BATCH_MS=0` selects synchronous reference-model writes for comparisons,
+  retaining the single membership lookup. Positive values select the daemon interval.
 - Native Rage::Deferred executes push lookup in the app runtime; the configured disk backend
   uses a WAL, while `nil` keeps scheduling in memory. The benchmark pool evaluates the reference subscriptions and raises if any real recipient exists;
   network push delivery and webhook jobs are outside the intended one-user, no-bot dataset.
@@ -81,25 +99,34 @@ Run the focused acceptance suite with the bundled reference test dependencies:
 
 ```sh
 cd bench/rage
-bundle exec ruby test/benchmark_test.rb
+bundle exec ruby -Itest -e 'require_relative "test/benchmark_test"; require_relative "test/presence_batch_test"'
 ```
 
 It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
-Fourteen tests cover benchmark dataset validation, HTTP and Cable cookie authentication,
+Twenty-five tests cover benchmark dataset validation, HTTP and Cable cookie authentication,
 three scrape streams, six protocol confirmations, signed-stream/membership guards, presence counts and disconnect, full message
 HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
-queries, plus request/task fiber isolation, Zlib round-trips and compression before fan-out. Tests use
-the same synchronous fiber shim as `rage/rspec` and substitute socket transport/timers; live Iodine scheduling, pings and networking
-are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
+queries, plus request/task fiber isolation, Zlib round-trips and compression before fan-out. Cable
+authentication also checks one joined SELECT, no Session instantiation, and rejection after
+session deletion. Tests use the same synchronous fiber shim as `rage/rspec` and substitute socket transport/timers;
+live Iodine scheduling, pings and networking are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
+Unit tests flush queued presence explicitly because their Iodine timers are substituted. Batch
+tests cover separate worker queues, multiple memberships in one UPDATE, early disconnect, TTL/
+refresh/unread/touch behavior against the reference model, out-of-order worker timestamps,
+deleted memberships, server-startup presence reset, and rollback/retry with arrivals during a failed flush.
 
 ## Shared runner and local smoke
 
-Build the load generator once; its Tokio runtime uses all available logical cores by default.
+The runner builds the load generator for the load host's Rust target before each run (Cargo reuses
+unchanged builds). It uses `target/bench/<host-target>/release/loadgen`, so a copied macOS or ARM
+binary in `target/bench/release/loadgen` cannot be mistaken for a native Linux/x86 executable.
+`LOADGEN=/absolute/path/to/loadgen` selects a prebuilt binary instead; it must support `--help`
+and run on the load host. The runner checks this before preparing fixtures or launching the app.
+Its Tokio runtime uses all available logical cores by default.
 The runner no longer supplies a fixed affinity or a CPU quota. `APP_CPUS` and `LOADGEN_CPUS`
 are optional Linux `taskset` selections; leave both unset for a real Pi/external load host.
 
 ```sh
-CARGO_TARGET_DIR=target/bench cargo build --release --manifest-path bench/loadgen/Cargo.toml
 WORK="$PWD/bench/.work/rust-smoke" PORT=4555 \
   bench/results/pi-100k-20260928/run100k.sh target/release/campfire rust 100
 WORK="$PWD/bench/.work/rage-smoke" PORT=4555 \
@@ -113,7 +140,7 @@ fixture command. Save a separate WORK for each implementation and secret/base co
 Subsequent runs with the same WORK reuse the cookie and scrape, preserving the initial 80-message
 fill but accumulating benchmark messages. Use fresh WORKs for measured comparisons.
 
-The default measured phases remain 30 seconds idle, 10 paced markers at 200 ms intervals and two
+The default measured phases remain 30 seconds idle, 10 paced markers at 100 ms intervals and two
 closed-loop posters for 10 seconds, then delivery drain. The runner defaults to `--wire 1 --deflate 1`:
 it counts actual WebSocket bytes/frames and offers compression. Rust negotiates it; Iodine does not.
 In this benchmark mode the client accepts plain JSON and inflates other text payloads regardless
@@ -140,6 +167,23 @@ only the loadgen on its own host; sample the complete app process tree separatel
 
 ## Real Raspberry Pi 5 and external load host
 
+For a native Rust build on the Pi, install the native media dependencies listed in the root
+[`Dockerfile`](../../Dockerfile), check out `reference/`, and explicitly select the same Rust
+version as the Docker build:
+
+```sh
+# Pi, repository root.
+rustup toolchain install 1.98.1 --profile minimal
+CARGO_TARGET_DIR=target/pi JEMALLOC_SYS_WITH_LG_PAGE=14 \
+  cargo +1.98.1 build --release --locked -p campfire
+```
+
+`--locked` pins dependencies, not the compiler. The reported Rust 1.99.0 build crashes in LLVM's
+SLP vectorizer during fat LTO; try 1.98.1 first, which also built the app in the recorded
+[ARM64 checks](../results/sha2-arm64-20260930/summary.md). This keeps the release profile's fat
+LTO and single codegen unit. The jemalloc setting supports the Pi 5's 16 KB kernel pages.
+Record `rustc +1.98.1 -Vv` with benchmark results.
+
 On the Pi, install this checkout's pinned Ruby/bundle (or build Rust), keep the `reference/`
 submodule checked out, and arrange an open-file limit above the socket count on both machines
 (for example `ulimit -n 200000`, with a corresponding hard limit). No emulated CPU quota is used.
@@ -162,7 +206,7 @@ SAMPLE_PID=$!
 ```
 
 For Rust, use a separate WORK and the same key/storage exports, then replace Rage preparation and
-launch with `DISABLE_SSL=1 HTTP_PORT=4555 TARGET_PORT=4556 target/release/campfire server`.
+launch with `DISABLE_SSL=1 HTTP_PORT=4555 TARGET_PORT=4556 target/pi/release/campfire server`.
 Its empty database first-run flow is prepared remotely by `fill.py`; use `PREPARED=0` below.
 Run the servers one at a time on the same Pi port. Disclose the configured Rage worker/thread
 topology; the process-tree sampler aggregates the master and every worker's CPU/memory.
@@ -170,6 +214,7 @@ topology; the process-tree sampler aggregates the master and every worker's CPU/
 On the separate Linux load host:
 
 ```sh
+# Run from a source checkout on this host; exclude target/ when copying from another machine.
 # PI_BASE is the Pi Ethernet address; LAN_SOURCES are real IPv4 addresses assigned to this host.
 # Supply enough source/destination port pairs for 100k, considering ip_local_port_range/TIME_WAIT.
 export PI_BASE=http://192.168.1.50:4555
@@ -185,10 +230,14 @@ provides at least 25,000 available ports each; additional sources or cooldown ma
 runs. Connect through Ethernet to measure the real network limit. First validate 100, then 1,000
 and 10,000 clients before 100,000. Synchronize clocks if merging Pi samples with load-host PHASE
 Unix timestamps. Each app sample includes `process_count` and `pids` so the measured process tree
-can be audited; worker replacements are discovered on the next one-second sample.
+can be audited; worker replacements are discovered on the next one-second sample. Linux discovers
+descendants through the parent IDs in `/proc/*/stat`, without relying on optional per-thread
+`children` files. Copy an updated sampler to the Pi and restart it before measuring; an already
+running Python process does not reload script changes. Permission errors reading a worker's PSS
+are reported instead of silently producing a master-only total.
 
 Runner regression checks:
-`python3 -m unittest bench/test_cable_report.py bench/test_sample_process.py` and
+`python3 -m unittest bench/test_run100k.py bench/test_cable_report.py bench/test_sample_process.py` and
 `CARGO_TARGET_DIR=target/bench cargo test --manifest-path bench/loadgen/Cargo.toml`.
 
 The Ruby Zlib compression checks and paired local measurements are recorded in

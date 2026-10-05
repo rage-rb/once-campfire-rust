@@ -42,6 +42,19 @@ def sample(pid):
 
 
 def linux_process_tree(root_pid, proc_root='/proc'):
+    children = {}
+    # Use process parent IDs, as ps does. Per-thread children files depend on
+    # kernel configuration and omit Iodine workers when only the main TID is read.
+    for name in os.listdir(proc_root):
+        if not name.isdecimal():
+            continue
+        try:
+            with open(f'{proc_root}/{name}/stat') as stat:
+                fields = stat.read().rsplit(')', 1)[1].split()
+        except OSError:
+            continue  # Unrelated processes may disappear or be inaccessible.
+        children.setdefault(int(fields[1]), []).append(int(name))
+
     pids = []
     pending = [root_pid]
     seen = set()
@@ -51,12 +64,7 @@ def linux_process_tree(root_pid, proc_root='/proc'):
             continue
         seen.add(pid)
         pids.append(pid)
-        try:
-            with open(f'{proc_root}/{pid}/task/{pid}/children') as child_list:
-                children = child_list.read().split()
-        except OSError:
-            continue
-        pending.extend(int(child) for child in children)
+        pending.extend(children.get(pid, []))
     return sorted(pids)
 
 
@@ -95,7 +103,7 @@ class ProcessTreeSampler:
         for pid in process_tree(self.root_pid):
             try:
                 metrics, identity = process(pid)
-            except (OSError, StopIteration, subprocess.CalledProcessError, ValueError):
+            except (FileNotFoundError, ProcessLookupError, subprocess.CalledProcessError):
                 continue
             live.append((pid, metrics))
             self.cpu_by_identity[identity] = metrics['cpu_seconds']
@@ -127,5 +135,5 @@ if __name__ == '__main__':
             row = dict(time=time.time(), app=app_sample, loadgen=sample(args.loadgen))
             print(json.dumps(row), flush=True)
             time.sleep(1)
-    except (OSError, StopIteration, subprocess.CalledProcessError):
+    except (FileNotFoundError, ProcessLookupError, subprocess.CalledProcessError):
         pass  # Tracked process exited; the runner handles its exit status.
