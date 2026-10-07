@@ -94,6 +94,11 @@ Deliberate benchmark differences:
 - Cable authentication joins users to sessions for the verified token in one SELECT, rather
   than loading a Session and then its User. It checks session existence on every connection
   and retains the full User object, reference cookie verification, and rejection behavior.
+- RoomMessages parses the verified stream's GlobalID and checks room existence and current
+  membership with one prepared `SELECT 1`, rather than loading the same Room twice.
+  The signed model must be Room or a subclass; subclass type filters and scalar-id handling
+  are preserved. No Room model or timestamp fields are loaded. Every subscription reads
+  current membership, so revoked access is rejected when reconnecting.
 - Presence reuses one membership lookup within the subscription callback. A worker-scoped Rage
   daemon flushes queued connect/disconnect/refresh events every **100 ms** by default. Each flush
   takes the SQLite write lock with `BEGIN IMMEDIATE`, reads affected memberships once, replays
@@ -135,14 +140,16 @@ bundle exec ruby -Itest -e 'Dir["test/*_test.rb"].sort.each { |path| require_rel
 ```
 
 It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
-Forty-three tests cover benchmark dataset validation, UTC timestamp decoding across local DST changes,
+Forty-six tests cover benchmark dataset validation, UTC timestamp decoding across local DST changes,
 HTTP and Cable cookie authentication,
 three scrape streams, six protocol confirmations, signed-stream/membership guards, presence counts and disconnect, full message
 HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
 queries, plus request/task fiber isolation, Zlib round-trips and compression before fan-out. Cable
 authentication also checks one joined SELECT, no Session instantiation, and rejection after
-session deletion. Tests use the same synchronous fiber shim as `rage/rspec` and substitute socket transport/timers;
-live Iodine scheduling, pings and networking are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
+session deletion. RoomMessages checks one existence SELECT without model instantiation,
+revoked membership, missing rooms, malformed/composite GlobalIDs, and signed subclass mismatches. Tests use
+the same synchronous fiber shim as `rage/rspec` and substitute socket transport/timers; live Iodine scheduling, pings and networking
+are checked by the real loadgen smoke runs. No tests are skipped for missing benchmark data.
 Unit tests flush queued presence explicitly because their Iodine timers are substituted. Batch
 tests cover separate worker queues, multiple memberships in one UPDATE, early disconnect, TTL/
 refresh/unread/touch behavior against the reference model, out-of-order worker timestamps,

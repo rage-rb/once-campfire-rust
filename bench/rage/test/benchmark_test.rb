@@ -64,6 +64,47 @@ class HttpAuthenticationTest < BenchmarkTest
 end
 
 class CableSubscriptionsTest < BenchmarkTest
+  def test_room_messages_authorizes_with_one_query_without_instantiating_a_room
+    connected = socket
+    queries = []
+    record_query = ->(_, _, _, _, payload) { queries << payload[:sql] if payload[:sql].start_with?("SELECT") }
+    Room.stub(:call, ->(*) { flunk "RoomMessages must not instantiate a Room" }) do
+      ActiveSupport::Notifications.subscribed(record_query, "sql.sequel") do
+        _, response = subscribe(connected, stream_params("RoomMessagesChannel", @room, :messages))
+        assert_equal "confirm_subscription", response["type"]
+      end
+    end
+    assert_equal 1, queries.size
+    assert_match(/\ASELECT 1 AS /, queries.first)
+    assert_includes queries.first, 'INNER JOIN `memberships`'
+  end
+
+  def test_room_messages_checks_membership_again_after_revocation
+    params = stream_params("RoomMessagesChannel", @room, :messages)
+    _, response = subscribe(socket, params)
+    assert_equal "confirm_subscription", response["type"]
+    Membership.where(user_id: @user.id, room_id: @room.id).delete
+    _, response = subscribe(socket, params)
+    assert_equal "reject_subscription", response["type"]
+  end
+
+  def test_room_messages_checks_signed_model_type_and_room_existence
+    rejected = [Rooms::Closed.new(id: @room.id).to_gid_param,
+      Room.new(id: -1).to_gid_param,
+      GlobalID.new("gid://campfire/Room/#{@room.id}/2").to_param,
+      "malformed"]
+    rejected.each do |gid|
+      _, response = subscribe(socket, stream_params("RoomMessagesChannel", gid, :messages))
+      assert_equal "reject_subscription", response["type"]
+    end
+    _, response = subscribe(socket, stream_params("RoomMessagesChannel", Room.new(id: @room.id), :messages))
+    assert_equal "confirm_subscription", response["type"]
+    Membership.where(room_id: @room.id).delete
+    Room.where(id: @room.id).delete
+    _, response = subscribe(socket, stream_params("RoomMessagesChannel", @room, :messages))
+    assert_equal "reject_subscription", response["type"]
+  end
+
   def test_connection_authentication_loads_user_in_one_query_without_a_session_object
     cookie_value = cookie
     queries = []

@@ -125,7 +125,9 @@ native Deferred queue and unconditional
 Ruby Zlib Cable compression (with Iodine frame differences) are documented there. Presence uses
 one membership lookup and defaults to 100 ms batches per worker, with serialized count updates
 and delayed database visibility. Cable authentication fetches its user through the session in
-one joined query. These benchmark differences are separate from the Rust application.
+one joined query. RoomMessages combines room existence and membership authorization in one
+prepared existence query, preserving signed GlobalID and room-subclass checks without loading
+Room objects. These benchmark differences are separate from the Rust application.
 
 The app keeps the Rails database, storage and current cookie formats compatible. Deliberate
 behavior changes and compatibility limits are listed below.

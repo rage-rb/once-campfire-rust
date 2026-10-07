@@ -52,9 +52,13 @@ class PreparedLookupsTest < BenchmarkTest
     CampfireBenchmark::DB.synchronize do |connection|
       assert_equal @room, Rooms::Open.find(@room.id)
       original = connection.prepared_statements.fetch(:queries_record_rooms_open).first
+      assert Queries::Room.exists_for_user?(model: Rooms::Open, user_id: @user.id, room_id: @room.id)
+      authorization = connection.prepared_statements.fetch(:queries_room_rooms_open).first
       require_relative "support/special_open_room"
       special = SpecialOpenRoom.create_for({ name: "Special", creator: @user }, users: [@user])
       assert_instance_of SpecialOpenRoom, Rooms::Open.find(special.id)
+      assert Queries::Room.exists_for_user?(model: Rooms::Open, user_id: @user.id, room_id: special.id)
+      assert authorization.closed?
       assert original.closed?
       assert_equal @room, Rooms::Open.find(@room.id)
     end

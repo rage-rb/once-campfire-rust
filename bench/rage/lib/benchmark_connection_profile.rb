@@ -45,7 +45,7 @@ module BenchmarkConnectionProfile
       wrap(PresenceChannel, :membership, "presence.membership_lookup")
       wrap(Membership, :present, "presence.update")
       wrap(BenchmarkPresenceBatch, :flush, "presence.flush")
-      wrap(RoomMessagesChannel.singleton_class, :subscribable_room, "room_messages.authorization")
+      wrap(RoomMessagesChannel.singleton_class, :subscribable_stream?, "room_messages.authorization")
       [RoomMessagesChannel, BenchmarkTurboStreamsChannel].each do |klass|
         wrap(klass.singleton_class, :verified_stream_name, "stream.verify_signature")
       end
