@@ -5,7 +5,7 @@ module RageCable
     identified_by :current_user
 
     def connect
-      self.current_user = BenchmarkAuthentication.session_for(request.env)&.user
+      self.current_user = BenchmarkAuthentication.user_for(request.env)
       reject_unauthorized_connection unless current_user
     end
   end

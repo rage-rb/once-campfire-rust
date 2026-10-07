@@ -385,6 +385,8 @@ GEM
     sentry-ruby (5.26.0)
       bigdecimal
       concurrent-ruby (~> 1.0, >= 1.0.2)
+    sequel (5.109.0)
+      bigdecimal
     sinatra (4.2.1)
       logger (>= 1.6.0)
       mustermann (~> 3.0)
@@ -467,6 +469,7 @@ DEPENDENCIES
   selenium-webdriver
   sentry-rails
   sentry-ruby
+  sequel (~> 5.0)
   sqlite3
   stimulus-rails
   surfguard!

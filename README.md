@@ -118,8 +118,10 @@ against Rails. See [`parity/SCREENS.md`](parity/SCREENS.md) for coverage and mas
 ## Known differences
 
 The optional [Rage benchmark slice](bench/rage/README.md) serves the 100k workload using Rage
-HTTP/Cable and the reference Rails data/view libraries. Its setup pages, disabled benchmark
-CSRF/rate limiting, memory fragment cache, configurable native Deferred queue and unconditional
+HTTP/Cable, its own Sequel models and the reference Rails view/content libraries. Active Record
+is absent from the benchmark runtime; the SQLite schema and signed identifiers stay compatible.
+Its setup pages, disabled benchmark CSRF/rate limiting, memory fragment cache, configurable
+native Deferred queue and unconditional
 Ruby Zlib Cable compression (with Iodine frame differences) are documented there. Presence uses
 one membership lookup and defaults to 100 ms batches per worker, with serialized count updates
 and delayed database visibility. Cable authentication fetches its user through the session in

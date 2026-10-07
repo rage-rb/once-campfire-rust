@@ -38,10 +38,10 @@ class BenchmarkPresenceBatch
     @pending = {}
     @flushing = true
     begin
-      # config/database.yml uses BEGIN IMMEDIATE. Acquire the SQLite write lock
+      # BenchmarkDatabase uses BEGIN IMMEDIATE. Acquire the SQLite write lock
       # before reading counts, so separate workers cannot overwrite each other.
-      Membership.transaction do
-        rows = Membership.where(id: batch.keys).pluck(:id, :connections, :connected_at, :unread_at, :updated_at)
+      Membership.db.transaction do
+        rows = Membership.where(id: batch.keys).select_map([:id, :connections, :connected_at, :unread_at, :updated_at])
         rows.each { |row| replay(row, batch.fetch(row.first)) }
         write(rows) if rows.any?
       end
@@ -80,11 +80,10 @@ class BenchmarkPresenceBatch
     end
 
     def write(rows)
-      database = Membership.connection
-      assignments = %w[connections connected_at unread_at updated_at].each_with_index.map do |column, index|
-        cases = rows.map { |row| "WHEN #{database.quote(row[0])} THEN #{database.quote(row[index + 1])}" }.join(" ")
-        "#{column} = CASE id #{cases} END"
+      assignments = %i[connections connected_at unread_at updated_at].each_with_index.to_h do |column, index|
+        cases = rows.to_h { |row| [row[0], row[index + 1]] }
+        [column, Sequel.case(cases, nil, :id)]
       end
-      Membership.where(id: rows.map(&:first)).update_all(assignments.join(", "))
+      Membership.where(id: rows.map(&:first)).update(assignments)
     end
 end

@@ -9,7 +9,7 @@ class BenchmarkSessionsController < BenchmarkController
 
   def create
     if user = User.active.authenticate_by(email_address: params[:email_address], password: params[:password])
-      session = user.sessions.start!(user_agent: request.user_agent, ip_address: Current.request.remote_ip)
+      session = user.start_session(user_agent: request.user_agent, ip_address: Current.request.remote_ip)
       BenchmarkAuthentication.set_cookie(request.env, headers, session)
       redirect_to "/"
     else

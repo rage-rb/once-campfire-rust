@@ -12,10 +12,10 @@ class RoomMessagesChannel < ApplicationChannel
 
   def self.subscribable_room(user, stream_name)
     gid_param, suffix = stream_name.to_s.split(":", 2)
-    if suffix == "messages" && room = GlobalID::Locator.locate(gid_param, only: Room)
-      user.rooms.find_by(id: room.id)
+    if suffix == "messages" && room = GlobalID::Locator.locate(gid_param, only: [Room])
+      user.find_room(room.id)
     end
-  rescue ActiveRecord::RecordNotFound
+  rescue Sequel::NoMatchingRow
     nil
   end
 

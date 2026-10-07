@@ -10,7 +10,14 @@ module BenchmarkAuthentication
 
   def self.session_for(env)
     if token = cookie_jar(env).signed[:session_token]
-      Session.find_by(token: token)
+      Queries::Session.fetch_by_token(token: token)
+    end
+  end
+
+  # Preserve the existing joined Cable lookup, without allocating a Session.
+  def self.user_for(env)
+    if token = cookie_jar(env).signed[:session_token]
+      Queries::User.fetch_by_session_token(token: token)
     end
   end
 

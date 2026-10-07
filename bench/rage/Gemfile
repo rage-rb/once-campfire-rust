@@ -1,2 +1,3 @@
 eval_gemfile "../../reference/Gemfile"
 gem "rage-rb", github: "rage-rb/rage", branch: "main"
+gem "sequel", "~> 5.0"

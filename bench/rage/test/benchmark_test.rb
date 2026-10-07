@@ -1,4 +1,5 @@
 require_relative "test_helper"
+require "open3"
 
 class HttpAuthenticationTest < BenchmarkTest
   def test_login_issues_real_rails_cookie_and_resolves_session_and_user
@@ -34,7 +35,7 @@ class HttpAuthenticationTest < BenchmarkTest
       assert rejected.closed
       assert_equal({ "type" => "disconnect", "reason" => "unauthorized", "reconnect" => false }, JSON.parse(rejected.writes.last))
     end
-    @user.update!(password: "secret&+=123456")
+    @user.update(password: "secret&+=123456")
     assert_equal 302, login(password: "secret&+=123456").status
   end
 
@@ -66,27 +67,23 @@ class CableSubscriptionsTest < BenchmarkTest
   def test_connection_authentication_loads_user_in_one_query_without_a_session_object
     cookie_value = cookie
     queries = []
-    instantiated = []
     record_query = ->(_, _, _, _, payload) { queries << payload[:sql] if payload[:sql].start_with?("SELECT") }
-    record_instantiation = ->(_, _, _, _, payload) { instantiated << [payload[:class_name], payload[:record_count]] }
     connected = nil
-    ActiveSupport::Notifications.subscribed(record_query, "sql.active_record") do
-      ActiveSupport::Notifications.subscribed(record_instantiation, "instantiation.active_record") do
-        connected = socket(cookie_value)
-      end
+    Session.stub(:new, ->(*) { flunk "Cable must not instantiate a Session" }) do
+      ActiveSupport::Notifications.subscribed(record_query, "sql.sequel") { connected = socket(cookie_value) }
     end
     refute connected.closed
     assert_equal @user, connected.env["rage.identified_by"][:current_user]
     assert_equal({ "type" => "welcome" }, JSON.parse(connected.writes.first))
     assert_equal 1, queries.size
-    assert_includes queries.first, 'INNER JOIN "sessions"'
-    assert_equal [["User", 1]], instantiated
+    assert_includes queries.first, 'INNER JOIN `sessions`'
+    assert_instance_of User, connected.env["rage.identified_by"][:current_user]
   end
 
   def test_deleted_session_rejects_new_connections_with_a_valid_signed_cookie
     cookie_value = cookie
     refute socket(cookie_value).closed
-    Session.delete_all
+    Session.dataset.delete
     rejected = socket(cookie_value)
     assert rejected.closed
     assert_equal({ "type" => "disconnect", "reason" => "unauthorized", "reconnect" => false }, JSON.parse(rejected.writes.last))
@@ -100,25 +97,25 @@ class CableSubscriptionsTest < BenchmarkTest
         stream_params("Turbo::StreamsChannel", :rooms), stream_params("Turbo::StreamsChannel", @user, :rooms),
         { channel: "UnreadRoomsChannel" }, { channel: "PresenceChannel", room_id: @room.id }, { channel: "HeartbeatChannel" }]
       membership_loads = 0
-      count_membership_loads = ->(_, _, _, _, payload) { membership_loads += 1 if payload[:name] == "Membership Load" }
-      ActiveSupport::Notifications.subscribed(count_membership_loads, "sql.active_record") do
+      count_membership_loads = ->(_, _, _, _, payload) { membership_loads += 1 if payload[:sql].match?(/\ASELECT .* FROM `memberships`/) }
+      ActiveSupport::Notifications.subscribed(count_membership_loads, "sql.sequel") do
         params.each do |item|
           identifier, response = subscribe(connected, item)
           assert_equal({ "identifier" => identifier, "type" => "confirm_subscription" }, response)
         end
       end
       assert_equal 1, membership_loads
-      assert_equal(BenchmarkPresenceBatch.enabled? ? 0 : 1, @room.memberships.first.reload.connections)
+      assert_equal(BenchmarkPresenceBatch.enabled? ? 0 : 1, @room.memberships_dataset.first.refresh.connections)
       BenchmarkPresenceBatch.flush
       assert_equal 6, connected.env["rage.cable"].size
-      assert_equal 1, @room.memberships.first.reload.connections
-      assert @room.memberships.first.connected?
+      assert_equal 1, @room.memberships_dataset.first.refresh.connections
+      assert @room.memberships_dataset.first.connected?
       assert_includes @broadcasts, ["user_#{@user.id}_reads", { room_id: @room.id }]
       assert connected.streams.any? { |name| name.start_with?("cable:#{@room.to_gid_param}:messages:") }
       assert connected.streams.any? { |name| name.start_with?("cable:UnreadRoomsChannel:#{@user.id}:") }
       close_socket(connected)
       BenchmarkPresenceBatch.flush
-      membership = @room.memberships.first.reload
+      membership = @room.memberships_dataset.first.refresh
       assert_equal 0, membership.connections
       assert_nil membership.connected_at
       assert_nil Current.user
@@ -130,14 +127,14 @@ class CableSubscriptionsTest < BenchmarkTest
       sockets = 2.times.map { socket }
       sockets.each { |connection| subscribe(connection, channel: "PresenceChannel", room_id: @room.id) }
       BenchmarkPresenceBatch.flush
-      assert_equal 2, @room.memberships.first.reload.connections
+      assert_equal 2, @room.memberships_dataset.first.refresh.connections
       close_socket(sockets.first)
       BenchmarkPresenceBatch.flush
-      assert_equal 1, @room.memberships.first.reload.connections
-      assert @room.memberships.first.connected?
+      assert_equal 1, @room.memberships_dataset.first.refresh.connections
+      assert @room.memberships_dataset.first.connected?
       close_socket(sockets.last)
       BenchmarkPresenceBatch.flush
-      assert_equal 0, @room.memberships.first.reload.connections
+      assert_equal 0, @room.memberships_dataset.first.refresh.connections
     end
   end
 
@@ -159,7 +156,7 @@ class CableSubscriptionsTest < BenchmarkTest
     end
     assert_empty connected.env["rage.cable"]
     assert_empty @broadcasts
-    assert_equal 0, @room.memberships.first.reload.connections
+    assert_equal 0, @room.memberships_dataset.first.refresh.connections
     # The signed stream decides the room; a conflicting client room_id can't grant access.
     _, response = subscribe(connected, stream_params("RoomMessagesChannel", hidden, :messages).merge(room_id: @room.id))
     assert_equal "reject_subscription", response["type"]
@@ -180,14 +177,14 @@ class MessageWorkloadTest < BenchmarkTest
     end
     assert_equal 200, response.status
     assert_equal "text/vnd.turbo-stream.html; charset=utf-8", response.headers["content-type"]
-    message = Message.last
+    message = Message.order(:id).last
     assert_equal 1, Message.count
     assert_equal @user, message.creator
     assert_equal "client-1", message.client_message_id
-    assert_equal 1, ActionText::RichText.where(record: message, name: "body").count
-    assert_operator @room.reload.updated_at, :>, previous_touch
-    assert_equal message.plain_text_body, ActiveRecord::Base.connection.select_value("SELECT body FROM message_search_index WHERE rowid = #{message.id}")
-    assert_nil @room.memberships.first.unread_at
+    assert_equal 1, RichText.where(record_type: "Message", record_id: message.id, name: "body").count
+    assert_operator @room.refresh.updated_at, :>, previous_touch
+    assert_equal message.plain_text_body, CampfireBenchmark::DB[:message_search_index].where(rowid: message.id).get(:body)
+    assert_nil @room.memberships_dataset.first.unread_at
     assert_equal 2, @broadcasts.length
     assert_equal "#{@room.to_gid_param}:messages", @broadcasts.first.first
     assert_equal ["user_#{@user.id}_unreads", { roomId: @room.id }], @broadcasts.last
@@ -213,7 +210,7 @@ class MessageWorkloadTest < BenchmarkTest
     pool = Object.new
     pool.define_singleton_method(:queue) do |payload, subscriptions|
       original_pool.queue(payload, subscriptions)
-      pushes << [payload, subscriptions.load.to_a]
+      pushes << [payload, subscriptions.all]
     end
     Rails.configuration.x.web_push_pool = pool
     task = Fiber.schedule { BenchmarkPushMessage.new.__perform(context) }
@@ -228,13 +225,19 @@ class MessageWorkloadTest < BenchmarkTest
 
   def test_complete_reference_erb_and_actioncable_frame_match
     Current.user = @user
-    message = @room.messages.create_with_attachment!(body: "fanout bmk321z & <b>bold</b>")
+    message = @room.create_message(body: "fanout bmk321z & <b>bold</b>")
     rage = BenchmarkMessageRendering.append(message)
-    # Independent Action View renderer, using the untouched reference partial and
-    # the same no-CSRF setting as Rust. No marker-only or size-only assertions.
-    Rails.cache.clear
-    reference = ReferenceMessagesController.renderer.new(http_host: "localhost:4555", "rack.session" => {}).render(
-      formats: [:turbo_stream], inline: '<%= turbo_stream.append dom_id(message.room, :messages), message %>', locals: { message: message })
+    output, error, status = Open3.capture3(RbConfig.ruby, File.expand_path("reference_probe.rb", __dir__),
+      CampfireBenchmark::DB.opts[:database], message.id.to_s)
+    assert status.success?, error
+    probe = JSON.parse(output)
+    reference = probe.fetch("html")
+    assert_equal probe.fetch("body"), message.body.body.to_html
+    assert_equal probe.fetch("plain_text"), message.plain_text_body
+    assert_equal probe.fetch("avatar_token"), @user.avatar_token
+    assert_equal probe.fetch("room_gid"), @room.to_gid_param
+    assert_equal probe.fetch("user_role"), @user.role
+    assert_equal probe.fetch("user_status"), @user.status
     assert_equal reference, rage
     params = stream_params("RoomMessagesChannel", @room, :messages)
     expected = ActiveSupport::JSON.encode(identifier: params.to_json, message: reference)
@@ -278,7 +281,7 @@ class MessageWorkloadTest < BenchmarkTest
     Fiber.schedule do
       assert_nil Current.user
       assert_nil Current.request
-      assert_raises(ActiveRecord::RecordNotFound) { BenchmarkPushMessage.new.perform(room_id: -1, message_id: -1) }
+      assert_raises(Sequel::NoMatchingRow) { BenchmarkPushMessage.new.perform(room_id: -1, message_id: -1) }
     end
     assert_equal @user, Current.user
     assert_nil Current.request
@@ -319,33 +322,33 @@ end
 
 class DatasetValidationTest < BenchmarkTest
   def test_accepts_the_fill_dataset_without_changing_presence_or_messages
-    membership = @room.memberships.first
+    membership = @room.memberships_dataset.first
     membership.present
-    before = membership.reload.attributes
+    before = membership.refresh.values
     assert BenchmarkDataset.validate!
-    assert_equal before, membership.reload.attributes
+    assert_equal before, membership.refresh.values
     assert_equal 0, Message.count
   end
 
   def test_rejects_payload_changing_names_and_wrong_room_id
-    @user.update!(name: "David")
+    @user.update(name: "David")
     assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "fill.py administrator"
-    @user.update!(name: "David Hansson")
-    @room.update!(name: "Everyone")
+    @user.update(name: "David Hansson")
+    @room.update(name: "Everyone")
     assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "All Talk room"
-    @room.update!(name: FirstRun::FIRST_ROOM_NAME)
-    @room.memberships.delete_all
-    @room.update_columns(id: 2)
+    @room.update(name: FirstRun::FIRST_ROOM_NAME)
+    @room.memberships_dataset.delete
+    Room.where(id: @room.id).update(id: 2)
     assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "id 1"
   end
 
   def test_rejects_extra_users_and_push_subscriptions_before_jobs_can_retry
-    bot = User.create!(name: "Bot", role: :bot)
+    bot = User.create(name: "Bot", role: :bot)
     assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "one user"
-    Membership.where(user: bot).delete_all
+    Membership.where(user_id: bot.id).delete
     bot.delete
     # Bypass endpoint DNS validation: no network delivery is supported by this slice.
-    Push::Subscription.insert_all!([{ user_id: @user.id, endpoint: "https://fcm.googleapis.com/benchmark", created_at: Time.current, updated_at: Time.current }])
+    Push::Subscription.dataset.multi_insert([{ user_id: @user.id, endpoint: "https://fcm.googleapis.com/benchmark", created_at: Time.current, updated_at: Time.current }])
     assert_includes assert_raises(ArgumentError) { BenchmarkDataset.validate! }.message, "no push subscriptions"
   end
 end

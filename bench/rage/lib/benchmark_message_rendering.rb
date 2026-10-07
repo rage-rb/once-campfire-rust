@@ -21,16 +21,10 @@ module BenchmarkMessageRendering
     def broadcast_create
       # Full reference partial, followed by reference's per-member unread lookup.
       Rage::Cable.broadcast("#{room.to_gid_param}:messages", BenchmarkMessageRendering.append(self))
-      room.memberships.pluck(:user_id).each do |user_id|
+      room.memberships_dataset.select_map(:user_id).each do |user_id|
         UnreadRoomsChannel.broadcast_to(user_id, { roomId: room.id })
       end
     end
   end
 
-  module PushScheduling
-    private
-      def push_later(message)
-        BenchmarkPushMessage.enqueue(room_id: id, message_id: message.id)
-      end
-  end
 end

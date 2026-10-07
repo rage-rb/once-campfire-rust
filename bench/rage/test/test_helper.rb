@@ -9,6 +9,7 @@ ENV["SECRET_KEY_BASE"] = "a" * 128
 ENV["CAMPFIRE_STORAGE_PATH"] = TEST_STORAGE
 ENV["DATABASE_PATH"] = "#{TEST_STORAGE}/db.sqlite3"
 require_relative "../config/environment"
+PREPARED_STATEMENTS_AT_BOOT = CampfireBenchmark::DB.prepared_statements.keys.freeze
 require "minitest/autorun"
 require "minitest/mock"
 require "rack/mock"
@@ -19,11 +20,8 @@ Rage.configure do
   config.deferred.backend = [:disk, { path: "#{TEST_STORAGE}/deferred" }]
 end
 
-ActiveRecord::Schema.verbose = false
-load "#{CampfireBenchmark::REFERENCE}/db/schema.rb"
-
 Minitest.after_run do
-  ActiveRecord::Base.connection_pool.disconnect!
+  CampfireBenchmark::DB.disconnect
   FileUtils.remove_entry(TEST_STORAGE)
 end
 
@@ -65,16 +63,21 @@ class BenchmarkTest < Minitest::Test
 
   def setup
     Rails.cache.clear
-    db = ActiveRecord::Base.connection
-    db.disable_referential_integrity do
-      (db.tables - %w[schema_migrations ar_internal_metadata] - db.tables.grep(/message_search_index/)).each do |table|
-        db.execute("DELETE FROM #{db.quote_table_name(table)}")
+    db = CampfireBenchmark::DB
+    db.synchronize do
+      db.run("PRAGMA foreign_keys = OFF")
+      begin
+        (db.tables - %i[schema_migrations ar_internal_metadata] - db.tables.grep(/message_search_index/)).each do |table|
+          db[table].delete
+        end
+        db[:message_search_index].delete
+      ensure
+        db.run("PRAGMA foreign_keys = ON")
       end
-      db.execute("DELETE FROM message_search_index")
     end
     Rage::Deferred.__backend.pending_tasks.each { |id, _| Rage::Deferred.__backend.remove_task(id) }
-    Account.create!(name: FirstRun::ACCOUNT_NAME)
-    @user = User.create!(id: 1, name: "David Hansson", email_address: "david@example.com", password: "secret123456", role: :administrator)
+    Account.create(name: FirstRun::ACCOUNT_NAME)
+    @user = User.create(id: 1, name: "David Hansson", email_address: "david@example.com", password: "secret123456", role: :administrator)
     @room = Rooms::Open.create_for({ id: 1, name: FirstRun::FIRST_ROOM_NAME, creator: @user }, users: [@user])
     @http = Rack::MockRequest.new(Rage.application)
     @broadcasts = []

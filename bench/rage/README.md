@@ -1,10 +1,11 @@
 # Rage benchmark slice
 
-This is the authenticated message/Cable slice, using Rage 1.28.0.
-It serves benchmark HTTP and all six Cable subscriptions through Rage,
-while Rails supplies Active Record, Action Text, Action View, Turbo signing, and code loading.
-The pinned `reference/` models, helpers, ERB and route helpers are read directly, never modified.
-This is a benchmark application; the rest of Campfire's browser flows are not implemented.
+This is the authenticated message/Cable slice, using Rage 1.28.0 and Sequel 5.109.0.
+Rage serves benchmark HTTP and all six Cable subscriptions. The slice owns its Sequel models in `app/models/`; it does not load the
+reference models or boot Active Record. Rails supplies Action View, the Action Text content
+pipeline, signed cookies, Turbo signing, and code loading. The pinned `reference/` helpers, ERB
+and route helpers are read directly, never modified. This is a benchmark application; the rest
+of Campfire's browser flows are not implemented.
 
 From the repository root, with Ruby 4.0.6 and Bundler on PATH:
 
@@ -21,8 +22,9 @@ HTTP_PORT=4555 bench/rage/bin/server
 `bin/server` accepts the runner's unused `server` argument, preserves the storage path and maps
 `HTTP_PORT` to Rage's port. Worker count and Deferred persistence follow `config/application.rb`; Cable and jobs run in the app runtime.
 `DATABASE_PATH` can select an existing compatible SQLite database. Use an isolated benchmark copy:
-messages, sessions and membership presence are real writes. `bin/prepare` loads the exact reference
-schema only into an empty database, then calls the reference `FirstRun.create!` with the same
+messages, sessions and membership presence are real writes. Boot loads the reference-compatible
+schema snapshot from `crates/db/src/schema.sql` only into an empty database; `bin/prepare` then
+calls the slice's Sequel `FirstRun.create!` with the same
 Campfire account, David Hansson administrator and All Talk room as `fill.py`. It does not
 fill the 80 ordinary messages; the runner's preparation should do that via HTTP.
 Preparation and server startup reject a different dataset: exactly one active administrator and
@@ -32,7 +34,7 @@ is preserved; use a fresh isolated work directory for older Rage fixtures named 
 
 The implemented routes are `/up`, `/`, `/session/new`, `/session`, `/rooms/:id`,
 `/users/me/sidebar`, `/rooms/:room_id/messages` and `/cable`. Login uses the reference password
-check, Session model and Rails signed cookie jar. HTTP and Cable share cookie verification.
+check through Active Model's BCrypt implementation, a Sequel Session model and Rails signed cookie jar. HTTP and Cable share cookie verification.
 Cable resolves the signed session token with one joined User/Session query, without instantiating
 a Session. HTTP still loads the Session and preserves activity refresh. Turbo signatures use the
 reference key derivation and `campfire` GlobalIDs, so existing preparation
@@ -45,8 +47,38 @@ membership updates, native Deferred push enqueue, both empty push recipient quer
 lookup, full message partial render, synchronous large/small broadcasts and Turbo HTTP response.
 The response renders again, using the message fragment cached by the broadcast as in Rails.
 
+Sequel uses a fiber-owned connection pool and UTC timestamps. `datetime_parse_to_time` avoids
+passing stored timestamps through the host's local timezone. Database configuration uses
+the existing `database.yml`, SQLite WAL, foreign keys, the reference's GVL-releasing busy
+handler and `BEGIN IMMEDIATE`.
+Fixed single-row lookups live in model-grouped query classes under `lib/queries/`, for example
+`Queries::User.fetch_active_by_email(email_address:)` and `Queries::Room.fetch_for_user(user_id:, room_id:)`.
+They cover session/token and active-email authentication, membership-scoped rooms, presence
+membership, rich text, the current account, and model primary keys (including many-to-one associations).
+`Queries::Base` lazily builds and caches each named statement on its first call. A per-class mutex
+protects definition/registration; model resolution, dataset construction and execution happen
+outside it. No startup query/model registration list is needed. `Queries::Record` serves model
+primary-key reads and refreshes STI filters if another subclass loads later.
+The SQLite adapter separately prepares each native statement on first use per connection and
+reuses it with new bindings. Variable-length list queries
+and writes keep their existing dataset paths. `sql.sequel` notifications expose parameterized
+SELECT SQL for executions and separate PREPARE notifications when a connection first uses a query.
+Cached statements are reset after every execution, including early first-row returns and errors,
+to release read snapshots before returning the connection to the pool.
+Startup disconnects SQLite handles before forking so workers open their own connections.
+Message and rich-text writes and room touches share a transaction. FTS and unread/push callbacks
+run after its outer commit; rollback leaves no index row or queued push. Rich text uses
+`ActionText::Content` directly, retaining its stored HTML and plain-text behavior. Active Model
+and GlobalID adapters keep the reference DOM ids, database-id URLs, fragment keys and signed
+avatar URLs. The ORM is Sequel throughout authentication, channels, presence batching and jobs.
+
 Deliberate benchmark differences:
 
+- The slice owns Sequel models for its supported text-message workload rather than importing
+  the full Rails/Active Record model API. Existing schema, credentials, cookie formats and
+  stream signatures stay compatible. Upload/storage processing and the other browser flows
+  remain outside the slice. Rails/Active Record gems remain transitive bundle dependencies;
+  only the separate reference-model test probe loads Active Record.
 - Setup pages are skeletal scrape HTML. First-run forms, browser assets, uploads, editing, boosts,
   and other browser endpoints are outside the slice. The full message ERB still includes their
   original markup and URLs. The fixture command replaces the first-run flow.
@@ -73,7 +105,7 @@ Deliberate benchmark differences:
   Server startup resets previously connected memberships once before forking, matching
   `reference/config/puma.rb`; fixture preparation does not reset presence.
   This deliberately coalesces setup writes and serializes count updates compared with Rails.
-  `BENCHMARK_PRESENCE_BATCH_MS=0` selects synchronous reference-model writes for comparisons,
+  `BENCHMARK_PRESENCE_BATCH_MS=0` selects synchronous Sequel writes matching the reference model for comparisons,
   retaining the single membership lookup. Positive values select the daemon interval.
 - Native Rage::Deferred executes push lookup in the app runtime; the configured disk backend
   uses a WAL, while `nil` keeps scheduling in memory. The benchmark pool evaluates the reference subscriptions and raises if any real recipient exists;
@@ -99,11 +131,12 @@ Run the focused acceptance suite with the bundled reference test dependencies:
 
 ```sh
 cd bench/rage
-bundle exec ruby -Itest -e 'require_relative "test/benchmark_test"; require_relative "test/presence_batch_test"'
+bundle exec ruby -Itest -e 'Dir["test/*_test.rb"].sort.each { |path| require_relative path }'
 ```
 
 It owns a fresh temporary SQLite database and Deferred WAL, with no seed/Docker requirement.
-Twenty-five tests cover benchmark dataset validation, HTTP and Cable cookie authentication,
+Forty-three tests cover benchmark dataset validation, UTC timestamp decoding across local DST changes,
+HTTP and Cable cookie authentication,
 three scrape streams, six protocol confirmations, signed-stream/membership guards, presence counts and disconnect, full message
 HTML/Action Cable escaping, persistence/FTS/room touch, real disk enqueue and both empty push
 queries, plus request/task fiber isolation, Zlib round-trips and compression before fan-out. Cable
@@ -114,6 +147,15 @@ Unit tests flush queued presence explicitly because their Iodine timers are subs
 tests cover separate worker queues, multiple memberships in one UPDATE, early disconnect, TTL/
 refresh/unread/touch behavior against the reference model, out-of-order worker timestamps,
 deleted memberships, server-startup presence reset, and rollback/retry with arrivals during a failed flush.
+Model tests cover transaction rollback, rich-text failures, edits/deletion/FTS, TTL boundaries,
+session refresh, room inheritance and grants, unread exclusions, signed mentions and push
+recipient filters. Prepared lookup tests cover rebinding, statement reuse, independent fiber
+connections, disconnect/reconnect, STI/access guards, binary text parameters, and snapshot
+release after both successful reads and decoding errors. They also check empty statement definitions
+at boot, concurrent first calls, yielding during dataset construction, and later-loaded STI subclasses.
+The render comparison boots the actual pinned Rails models in a separate
+process against the test database and compares complete HTML, stored/plain text, avatar tokens
+and room GlobalIDs; the main test process asserts Active Record is absent.
 
 ## Shared runner and local smoke
 

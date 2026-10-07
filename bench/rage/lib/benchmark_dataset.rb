@@ -10,8 +10,8 @@ module BenchmarkDataset
     check(Room.count == 1, "one room")
     room = Room.first
     check(room.id == 1 && room.open? && room.name == FirstRun::FIRST_ROOM_NAME && room.creator_id == user.id, "the first-run All Talk room (id 1)")
-    check(Membership.count == 1 && room.memberships.exists?(user: user, involvement: :mentions), "one first-run membership")
-    check(Push::Subscription.none?, "no push subscriptions")
+    check(Membership.count == 1 && room.memberships_dataset.where(user_id: user.id, involvement: "mentions").any?, "one first-run membership")
+    check(Push::Subscription.empty?, "no push subscriptions")
     true
   end
 

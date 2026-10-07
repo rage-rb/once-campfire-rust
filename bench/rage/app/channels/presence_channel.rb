@@ -36,6 +36,6 @@ class PresenceChannel < RoomChannel
 
   private
     def membership
-      @room.memberships.find_by(user: current_user)
+      Queries::Membership.fetch_for_user(room_id: @room.id, user_id: current_user.id)
     end
 end
