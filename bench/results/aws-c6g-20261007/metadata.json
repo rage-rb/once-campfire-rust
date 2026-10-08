@@ -1,0 +1,160 @@
+{
+  "provenance": {
+    "source": "User-provided benchmark console output, result JSON, PHASE excerpts, and app-samples pasted into the conversation",
+    "reconstructed_on": "2026-10-08",
+    "original_run_date_utc": "2026-10-07",
+    "executed_locally": false,
+    "benchmark_rerun_during_archival": false,
+    "byte_for_byte_original_files": false,
+    "normalization": "JSON whitespace and equivalent numeric formatting normalized; supplied measurements and sample rows retained",
+    "missing_artifacts": [
+      "original load-generator sample JSONL",
+      "complete server logs",
+      "stderr other than the supplied PHASE lines",
+      "scrape/cookie files",
+      "exact software versions and source revisions",
+      "database snapshots and final row counts",
+      "total host or cgroup/kernel socket memory"
+    ]
+  },
+  "environment": {
+    "provider": "AWS",
+    "server_instance_type": "c6g.xlarge",
+    "load_generator_instance_type_as_reported": "m7.2xlarge",
+    "load_generator_instance_type_note": "Exact M7 variant was not supplied; this is the user's literal description, not a verified AWS SKU.",
+    "server_ip": null,
+    "region": null,
+    "availability_zones": null,
+    "server_os": null,
+    "load_generator_os": null,
+    "rails_ruby_version_as_reported": "4",
+    "rails_ruby_exact_version": null,
+    "rage_version": null,
+    "rails_version": null,
+    "app_revision": null,
+    "loadgen_revision": null,
+    "rails_puma_workers_as_reported": 4,
+    "rails_puma_threads_per_worker_as_reported": 5,
+    "rails_other_services_as_reported": [
+      "Redis",
+      "Resque"
+    ],
+    "source_addresses": [
+      "172.31.30.228",
+      "172.31.18.156",
+      "172.31.16.135",
+      "172.31.26.165",
+      "172.31.30.132"
+    ]
+  },
+  "workload": {
+    "runner": "bench/results/pi-100k-20260928/run100k.sh",
+    "mode": "external BASE with BIN=-",
+    "transport": "plain HTTP / WebSocket on port 4555",
+    "deflate_offered": true,
+    "negotiated_compression_clients": 0,
+    "manual_compression_as_reported": true,
+    "subscriptions_per_client": 6,
+    "idle_hold_secs": 30,
+    "paced_messages": 10,
+    "nominal_saturated_secs": 10,
+    "posters": 2,
+    "initial_fixture_and_database_counts_verified": false
+  },
+  "sample_layout": {
+    "app": "Original remote server process-tree samples, preserved in samp-<label>.jsonl",
+    "loadgen": "Empty objects exactly as supplied; raw client samples were not provided",
+    "memory_kind": "PSS",
+    "memory_kb_units": "KiB as reported by the Linux sampler",
+    "summary_console_memory_units": "MiB, despite the original reporter's MB label",
+    "wire_mb_per_sec_units": "decimal MB/s",
+    "stderr": "Only the supplied PHASE excerpts, not a reconstructed complete stderr stream"
+  },
+  "primary_rails_label": "rails-10k-ruby-4",
+  "rails_retry_label": "rails-10k-ruby-4-2",
+  "runs": {
+    "rage-c6-50k": {
+      "implementation": "Rage",
+      "models": "Sequel",
+      "clients": 50000,
+      "prepared": 1,
+      "original_start_utc": "2026-10-07T15:29:15.484Z",
+      "original_done_utc": "2026-10-07T15:30:28.502Z",
+      "observed_process_counts": [
+        1,
+        5
+      ],
+      "sample_count": 91,
+      "result": "cable-rage-c6-50k.json",
+      "phases": "cable-rage-c6-50k.err",
+      "samples": "samp-rage-c6-50k.jsonl",
+      "pasted_console_summary": "summary-rage-c6-50k.txt"
+    },
+    "rage-c6-50k-active-record": {
+      "implementation": "Rage",
+      "models": "Active Record",
+      "clients": 50000,
+      "prepared": 1,
+      "original_start_utc": "2026-10-07T16:34:47.069Z",
+      "original_done_utc": "2026-10-07T16:36:20.849Z",
+      "observed_process_counts": [
+        1,
+        5
+      ],
+      "sample_count": 118,
+      "result": "cable-rage-c6-50k-active-record.json",
+      "phases": "cable-rage-c6-50k-active-record.err",
+      "samples": "samp-rage-c6-50k-active-record.jsonl",
+      "pasted_console_summary": "summary-rage-c6-50k-active-record.txt"
+    },
+    "rage-c6-100k": {
+      "implementation": "Rage",
+      "models": "Sequel",
+      "clients": 100000,
+      "prepared": 1,
+      "original_start_utc": "2026-10-07T15:42:51.962Z",
+      "original_done_utc": "2026-10-07T15:44:41.336Z",
+      "observed_process_counts": [
+        1,
+        5
+      ],
+      "sample_count": 125,
+      "result": "cable-rage-c6-100k.json",
+      "phases": "cable-rage-c6-100k.err",
+      "samples": "samp-rage-c6-100k.jsonl",
+      "pasted_console_summary": "summary-rage-c6-100k.txt"
+    },
+    "rails-10k-ruby-4": {
+      "implementation": "Rails",
+      "models": "Active Record",
+      "clients": 10000,
+      "prepared": 0,
+      "original_start_utc": "2026-10-07T18:26:52.243Z",
+      "original_done_utc": "2026-10-07T18:28:17.920Z",
+      "observed_process_counts": [
+        13
+      ],
+      "sample_count": 115,
+      "result": "cable-rails-10k-ruby-4.json",
+      "phases": "cable-rails-10k-ruby-4.err",
+      "samples": "samp-rails-10k-ruby-4.jsonl",
+      "pasted_console_summary": "summary-rails-10k-ruby-4.txt"
+    },
+    "rails-10k-ruby-4-2": {
+      "implementation": "Rails",
+      "models": "Active Record",
+      "clients": 10000,
+      "prepared": 0,
+      "original_start_utc": "2026-10-07T18:42:14.539Z",
+      "original_done_utc": "2026-10-07T18:43:40.093Z",
+      "observed_process_counts": [
+        13
+      ],
+      "sample_count": 112,
+      "result": "cable-rails-10k-ruby-4-2.json",
+      "phases": "cable-rails-10k-ruby-4-2.err",
+      "samples": "samp-rails-10k-ruby-4-2.jsonl",
+      "pasted_console_summary": "summary-rails-10k-ruby-4-2.txt"
+    }
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "rage-c6-50k": {
+    "sample_count": 91,
+    "first_sample_time": 1791386938.2178416,
+    "last_sample_time": 1791387038.9141085,
+    "connect": {
+      "sample_count": 24,
+      "span_secs": 26.38294291496277,
+      "cpu_cores": 3.897214966935583,
+      "peak_pss_kib": 3140744
+    },
+    "idle": {
+      "sample_count": 27,
+      "span_secs": 29.120137929916382,
+      "cpu_cores": 0.1830348473220746,
+      "peak_pss_kib": 3175172
+    },
+    "paced": {
+      "sample_count": 2,
+      "span_secs": 1.1744451522827148,
+      "cpu_cores": 3.3377463327094317,
+      "peak_pss_kib": 3200617
+    },
+    "saturated_including_drain": {
+      "sample_count": 9,
+      "span_secs": 10.164122104644775,
+      "cpu_cores": 3.545805493966915,
+      "peak_pss_kib": 3293887
+    },
+    "peak_pss_kib": 3293887,
+    "active_peak_pss_kib": 3293887
+  },
+  "rage-c6-50k-active-record": {
+    "sample_count": 118,
+    "first_sample_time": 1791390863.9852784,
+    "last_sample_time": 1791390996.9158018,
+    "connect": {
+      "sample_count": 43,
+      "span_secs": 48.53479862213135,
+      "cpu_cores": 3.88916829488868,
+      "peak_pss_kib": 4866436
+    },
+    "idle": {
+      "sample_count": 26,
+      "span_secs": 28.714572191238403,
+      "cpu_cores": 0.15845613055618987,
+      "peak_pss_kib": 4894079
+    },
+    "paced": {
+      "sample_count": 2,
+      "span_secs": 1.2892415523529053,
+      "cpu_cores": 3.661067230873729,
+      "peak_pss_kib": 4900698
+    },
+    "saturated_including_drain": {
+      "sample_count": 8,
+      "span_secs": 9.250586748123169,
+      "cpu_cores": 3.65706532149041,
+      "peak_pss_kib": 4934933
+    },
+    "peak_pss_kib": 4934933,
+    "active_peak_pss_kib": 4934933
+  },
+  "rage-c6-100k": {
+    "sample_count": 125,
+    "first_sample_time": 1791387748.5427105,
+    "last_sample_time": 1791387897.7317536,
+    "connect": {
+      "sample_count": 50,
+      "span_secs": 60.31105375289917,
+      "cpu_cores": 3.8482166295899507,
+      "peak_pss_kib": 6174636
+    },
+    "idle": {
+      "sample_count": 25,
+      "span_secs": 29.52545928955078,
+      "cpu_cores": 0.30143476898087623,
+      "peak_pss_kib": 6187424
+    },
+    "paced": {
+      "sample_count": 3,
+      "span_secs": 2.957500457763672,
+      "cpu_cores": 3.5333891403357085,
+      "peak_pss_kib": 6201432
+    },
+    "saturated_including_drain": {
+      "sample_count": 9,
+      "span_secs": 11.438647031784058,
+      "cpu_cores": 3.5511192789786263,
+      "peak_pss_kib": 6235596
+    },
+    "peak_pss_kib": 6235596,
+    "active_peak_pss_kib": 6235596
+  },
+  "rails-10k-ruby-4": {
+    "sample_count": 115,
+    "first_sample_time": 1791397596.8177016,
+    "last_sample_time": 1791397718.456782,
+    "connect": {
+      "sample_count": 28,
+      "span_secs": 28.600175857543945,
+      "cpu_cores": 3.5692088226469454,
+      "peak_pss_kib": 2388985
+    },
+    "idle": {
+      "sample_count": 28,
+      "span_secs": 28.72589635848999,
+      "cpu_cores": 0.2537779816867385,
+      "peak_pss_kib": 2453882
+    },
+    "paced": {
+      "sample_count": 11,
+      "span_secs": 10.836406469345093,
+      "cpu_cores": 3.6589620472584845,
+      "peak_pss_kib": 2604174
+    },
+    "saturated_including_drain": {
+      "sample_count": 13,
+      "span_secs": 13.100753545761108,
+      "cpu_cores": 3.6196391172737727,
+      "peak_pss_kib": 2646783
+    },
+    "peak_pss_kib": 2677607,
+    "active_peak_pss_kib": 2646783
+  },
+  "rails-10k-ruby-4-2": {
+    "sample_count": 112,
+    "first_sample_time": 1791398522.3701732,
+    "last_sample_time": 1791398640.7065487,
+    "connect": {
+      "sample_count": 28,
+      "span_secs": 28.623178482055664,
+      "cpu_cores": 3.5523657885774234,
+      "peak_pss_kib": 2426443
+    },
+    "idle": {
+      "sample_count": 28,
+      "span_secs": 28.699235677719116,
+      "cpu_cores": 0.2275321919137247,
+      "peak_pss_kib": 2445026
+    },
+    "paced": {
+      "sample_count": 11,
+      "span_secs": 10.871596097946167,
+      "cpu_cores": 3.799810039650404,
+      "peak_pss_kib": 2709471
+    },
+    "saturated_including_drain": {
+      "sample_count": 12,
+      "span_secs": 11.915249586105347,
+      "cpu_cores": 3.869830813596212,
+      "peak_pss_kib": 2752341
+    },
+    "peak_pss_kib": 2762600,
+    "active_peak_pss_kib": 2752341
+  }
+}

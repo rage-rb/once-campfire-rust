@@ -1,0 +1,5 @@
+rails-10k-ruby-4-2 ready 10000 failed 0 connect_s 29.47 post->all p50/p99 2291.711 3186.687 saturated attempted/posted/complete 12 12 12 post_failed 0 wire MB/s 21.0 negotiated compression clients 0 inflated frames 220000
+  connect: 29.0s loadgen 0.03 cores, PSS 309 MB
+  idle: 29.1s loadgen 0.01 cores, PSS 312 MB
+  paced: 11.1s loadgen 0.19 cores, PSS 955 MB
+  saturated: 12.1s loadgen 0.21 cores, PSS 956 MB

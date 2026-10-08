@@ -1,0 +1,23 @@
+# Original user-supplied external-host commands, reconstructed from the conversation.
+# Not executed locally. SERVER_IP and CLIENT_WORK were not supplied; no values inferred.
+
+WORK="$PWD/bench/.work/rage-c6-50k" \
+BASE="http://$SERVER_IP:4555" PREPARED=1 SOURCES="172.31.30.228,172.31.18.156,172.31.16.135,172.31.26.165,172.31.30.132" \
+  bench/results/pi-100k-20260928/run100k.sh \
+    - rage-c6-50k 50000 --deflate 1
+
+WORK="$PWD/bench/.work/rage-c6-100k" \
+BASE="http://$SERVER_IP:4555" PREPARED=1 SOURCES="172.31.30.228,172.31.18.156,172.31.16.135,172.31.26.165,172.31.30.132" \
+  bench/results/pi-100k-20260928/run100k.sh \
+    - rage-c6-100k 100000 --deflate 1
+
+WORK="$PWD/bench/.work/rage-c6-50k-active-record" \
+BASE="http://$SERVER_IP:4555" PREPARED=1 SOURCES="172.31.30.228,172.31.18.156,172.31.16.135,172.31.26.165,172.31.30.132" \
+  bench/results/pi-100k-20260928/run100k.sh \
+    - rage-c6-50k-active-record 50000 --deflate 1
+
+WORK="$CLIENT_WORK" BASE="http://$SERVER_IP:4555" PREPARED=0 SOURCES="172.31.30.228,172.31.18.156,172.31.16.135,172.31.26.165,172.31.30.132" \
+  bench/results/pi-100k-20260928/run100k.sh - rails-10k-ruby-4 10000 --deflate 1
+
+WORK="$CLIENT_WORK" BASE="http://$SERVER_IP:4555" PREPARED=0 SOURCES="172.31.30.228,172.31.18.156,172.31.16.135,172.31.26.165,172.31.30.132" \
+  bench/results/pi-100k-20260928/run100k.sh - rails-10k-ruby-4-2 10000 --deflate 1

@@ -1,0 +1,5 @@
+rage-c6-50k ready 50000 failed 0 connect_s 27.8 post->all p50/p99 422.143 556.031 saturated attempted/posted/complete 42 42 42 post_failed 0 wire MB/s 438.7 negotiated compression clients 0 inflated frames 2600000
+  connect: 27.2s loadgen 0.17 cores, PSS 1497 MB
+  idle: 29.3s loadgen 0.07 cores, PSS 1520 MB
+  paced: 2.1s loadgen 4.19 cores, PSS 4435 MB
+  saturated: 9.3s loadgen 4.72 cores, PSS 4438 MB

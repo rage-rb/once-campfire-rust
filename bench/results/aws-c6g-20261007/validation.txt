@@ -1,0 +1,9 @@
+Archive validation only; no benchmarks executed locally.
+PASS rage-c6-50k: 91 server samples; 50000 ready; paced 10/10; saturated 42/42; no client/HTTP failures.
+PASS rage-c6-50k-active-record: 118 server samples; 50000 ready; paced 10/10; saturated 45/45; no client/HTTP failures.
+PASS rage-c6-100k: 125 server samples; 100000 ready; paced 10/10; saturated 22/22; no client/HTTP failures.
+PASS rails-10k-ruby-4: 115 server samples; 10000 ready; paced 10/10; saturated 12/12; no client/HTTP failures.
+PASS rails-10k-ruby-4-2: 112 server samples; 10000 ready; paced 10/10; saturated 12/12; no client/HTTP failures.
+PASS: five runs parsed; sample chronology, phase chronology, process counts, histograms, inflated-frame totals, and derived resource metrics checked.
+PASS: bench/cable_report.py was run separately for all five archives and exited successfully.
+Missing original client samples and non-PHASE stderr remain unavailable, not synthesized.
